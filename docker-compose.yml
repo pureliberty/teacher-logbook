@@ -10,7 +10,6 @@ services:
       POSTGRES_PASSWORD: logbook_pass_2025
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend:/docker-entrypoint-initdb.d
     networks:
       - logbook-network
     healthcheck:
