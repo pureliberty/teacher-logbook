@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, Text, DateTime, ForeignKey
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from datetime import datetime, timedelta
@@ -9,9 +9,12 @@ from typing import Optional, List
 from pydantic import BaseModel
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+from openpyxl import Workbook, load_workbook
+from io import BytesIO
 import redis
 import os
 import re
+import bcrypt
 
 # Configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://logbook_user:logbook_pass_2025@postgres:5432/teacher_logbook")
@@ -1045,6 +1048,255 @@ async def bulk_upload_users(
         "errors": errors
     }
 
+# =========================== 사용자 비밀번호 초기화 ============================
+@app.put("/api/admin/users/{user_id}/reset-password")
+def reset_user_password(
+    user_id: str,
+    new_password: str = Body(..., embed=True),
+    current_user = dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reset a user's password (admin only)"""
+    
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access Only")
+    
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 비밀번호 해시 생성
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+    user.password_hash = hashed.decode('utf-8')
+    
+    db.commit()
+    
+    return {
+        "message": f"Password reset for {user_id}"
+    }
+
+# =========================== Excel 템플릿 다운로드  ===========================
+@app.get("/api/admin/download-template/{template_type}")
+def download_excel_template(
+    template_type: str,
+    current_user: dict = Depends(get_current_user)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access Only")
+    
+    wb = Workbook()
+    
+    if template_type == "users":
+        ws = wb.active
+        ws.title = "Users"
+        
+        # 헤더 작성
+        headers = ["user_id", "password", "full_name", "role", "student_number", "grade", "class_number", "number_in_class"]
+        ws.append(headers)
+        
+        # 예시 데이터 (교사)
+        ws.append(["T0300", "1234!", "김선생", "teacher", "", "", "", ""])
+        ws.append(["T0301", "1234!", "이선생", "teacher", "", "", "", ""])
+        
+        # 예시 데이터 (학생)
+        ws.append(["S20201", "1234!", "홍길동", "student", "20201", "2", "2", "1"])
+        ws.append(["S20202", "1234!", "김철수", "student", "20202", "2", "2", "2"])
+        
+        # 열 너비 조정
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 10
+        ws.column_dimensions['E'].width = 15
+        ws.column_dimensions['F'].width = 8
+        ws.column_dimensions['G'].width = 12
+        ws.column_dimensions['H'].width = 15
+    
+    elif template_type == "subjects":
+        ws = wb.active
+        ws.title = "Subjects"
+        
+        # 헤더
+        headers = ["subject_name", "subject_name", "description"]
+        ws.append(headers)
+        
+        # 예시 데이터
+        ws.append(["KOR", "국어", "국어 과목"])
+        ws.append(["MATH", "수학", "수학 과목"])
+        ws.append(["ENG", "영어", "영어 과목"])
+        
+        # 열 너비 조정
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 30
+        
+    else:
+        raise HTTPException(status_code=400, detail="Invalid template type")
+    
+    # 메모리에 저장
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"{template_type}_template.xlsx"
+    
+    return Response(
+        content=output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+    
+# =========================== Excel 파일  업로드 및 임포트  ===========================
+@app.post("/api/admin/import-excel/{import_type}")
+async def import_excel(
+    import_type: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access Only")
+    
+    # 엑셀 파일 읽기
+    contents = await file.read()
+    wb = load_workbook(BytesIO(contents))
+    ws = wb.active
+    
+    results = {
+        "success": 0,
+        "failed": 0,
+        "errors": []
+    }
+
+    if import_type == "users":
+        # 헤더 건너뛰기
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        
+        for idx, row in enumerate(rows, start=2):
+            try:
+                user_id, password, full_name, role, student_number, grade, class_number, number_in_class = row
+            
+                # 필수 필드 검증
+                if not user_id or not password or not role:
+                    results["errors"].append(f"Row {idx}: Missing required fields")
+                    results["failed"] += 1
+                    continue
+
+                # 역할 검증
+                if role not in ["admin", "teacher", "student"]:
+                    results["errors"].append(f"Row {idx}: Invalid role '{role}'")
+                    results["failed"] += 1
+                    continue
+                
+                # 학생인 경우 추가 필드 검증
+                if role == "student":
+                    if not student_number or not grade or not class_number or not number_in_class:
+                        results["errors"].append(f"Row {idx}: Students require student_number, grade, class_number, number_in_class")
+                        results["failed"] += 1
+                        continue
+                
+                # 기존 사용자 확인
+                existing_user = db.query(User).filter(User.user_id == user_id).first()
+                
+                if existing_user:
+                    # 업데이트
+                    existing_user.full_name = full_name
+                    if password: # 비밀번호 제공된 경우만 업데이트
+                        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+                        existing_user.password_hash = hashed.decode('utf-8')
+                    existing_user.role = role
+                    existing_user.student_number = student_number
+                    existing_user.grade = grade
+                    existing_user.class_number = class_number
+                    existing_user.number_in_class = number_in_class
+                else:
+                    # 새 사용자 생성
+                    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+                    new_user = User(
+                        user_id=user_id,
+                        password_hash=hashed.decode('utf-8'),
+                        full_name=full_name,
+                        role=role,
+                        student_number=student_number,
+                        grade=grade,
+                        class_number=class_number,
+                        number_in_class=number_in_class
+                    )
+                    db.add(new_user)
+
+                results["success"] += 1
+            
+            except Exception as e:
+                results["errors"].append(f"Row {idx}: {str(e)}")
+                results["failed"] += 1
+        
+        db.commit()
+    
+    elif import_tyope == "subjects":
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        
+        for idx, row in enumerate(rows, start=2):
+            try:
+                subject_code, subject_name, description = row
+                
+                # 필수 필드 검증
+                if not subject_code or not subject_name:
+                    results["errors"].append(f"Row {idx}: Missing required fields")
+                    results["failed"] += 1
+                    continue
+                
+                # 기존 과목 확인
+                existing_subject = db.query(Subject).filter(Subject.subject_code == subject_code).first()
+                
+                if existing_subject:
+                    # 업데이트
+                    existing_subject.subject_name = subject_name
+                    existing_subject.description = description
+                else:
+                    # 새 과목 생성
+                    new_subject = Subject(
+                        subject_code=subject_code,
+                        subject_name=subject_name,
+                        description=description
+                    )
+                    db.add(new_subject)
+                
+                results["success"] += 1
+            
+            except Exception as e:
+                results["errors"].append(f"Row {idx}: {str(e)}")
+                results["failed"] += 1
+            
+        db.commit()
+        
+    else:
+        raise HTTPException(status_code=400, detail="Invalid import type")
+    
+    return results
+
+# =========================== 사용자 일괄 삭제  ===========================
+@app.post("/api/admin/users/bulk-delete")
+def bulk_delete_users(
+    user_ids: List[str] = Body(...),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access Only")
+    
+    deleted_count = 0
+    
+    for user_id in user_ids:
+            user = db.query(User).filter(User.user_id == user_id).first()
+            if user:
+                db.delete(user)
+                deleted_count += 1
+            
+    db.commit()
+    
+    return {
+        "message": f"{deleted_count} users deleted"
+    }
 
 if __name__ == "__main__":
     import uvicorn

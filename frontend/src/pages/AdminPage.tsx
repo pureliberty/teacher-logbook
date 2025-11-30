@@ -4,6 +4,250 @@ import { useAuthStore } from '../store';
 import { adminApi, subjectApi } from '../utils/api';
 import type { User, Subject } from '../types';
 
+// 비밀번호 초기화 모달
+interface ResetPasswordModalProps {
+  user: User;
+  onClose: () => void;
+  onReset: () => void;
+}
+
+function ResetPasswordModal({ user, onClose, onReset }: ResetPasswordModalProps) {
+  const [newPassword, setNewPassword] = useState('1234!');
+  const [loading, setLoading] = useState(false);
+
+  const handleReset = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/admin/users/${user.user_id}/reset-password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ new_password: newPassword })
+      });
+
+      if (response.ok) {
+        alert(`${user.user_id}의 비밀번호가 초기화되었습니다.`);
+        onReset();
+        onClose();
+      } else {
+        alert('비밀번호 초기화 실패');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-semibold mb-4">비밀번호 초기화</h3>
+        
+        <div className="mb-4">
+          <p className="text-sm text-gray-600 mb-2">사용자: {user.user_id}</p>
+          
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            새 비밀번호
+          </label>
+          <input
+            type="text"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            placeholder="새 비밀번호"
+          />
+        </div>
+
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:text-gray-800"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={loading || !newPassword}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? '처리 중...' : '초기화'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Excel 임포트 컴포넌트
+interface ExcelImportSectionProps {
+  type: 'users' | 'subjects';
+  onImportComplete: () => void;
+}
+
+function ExcelImportSection({ type, onImportComplete }: ExcelImportSectionProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<any>(null);
+
+  const typeName = type === 'users' ? '사용자' : '과목';
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await fetch(`/api/admin/download-template/${type}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${type}_template.xlsx`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error(error);
+      alert('템플릿 다운로드 실패');
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFile(e.target.files?.[0] || null);
+    setResult(null);
+  };
+
+  const handleImport = async () => {
+    if (!file) {
+      alert('파일을 선택해주세요.');
+      return;
+    }
+
+    setImporting(true);
+    setResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`/api/admin/import-excel/${type}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setResult(data);
+        
+        if (data.success > 0) {
+          onImportComplete();
+        }
+      } else {
+        alert('임포트 실패');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('오류가 발생했습니다.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+      <h3 className="text-lg font-semibold mb-4">{typeName} Excel 임포트</h3>
+
+      <div className="space-y-4">
+        {/* 템플릿 다운로드 */}
+        <div>
+          <button
+            onClick={handleDownloadTemplate}
+            className="flex items-center space-x-2 text-blue-600 hover:text-blue-800"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>📥 Excel 템플릿 다운로드</span>
+          </button>
+        </div>
+
+        {/* 파일 업로드 */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Excel 파일 선택
+          </label>
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            onChange={handleFileChange}
+            className="block w-full text-sm text-gray-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-md file:border-0
+              file:text-sm file:font-semibold
+              file:bg-blue-50 file:text-blue-700
+              hover:file:bg-blue-100"
+          />
+          {file && (
+            <p className="text-sm text-gray-600 mt-1">
+              선택된 파일: {file.name}
+            </p>
+          )}
+        </div>
+
+        {/* 임포트 버튼 */}
+        <div>
+          <button
+            onClick={handleImport}
+            disabled={!file || importing}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {importing && (
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            )}
+            {importing ? '임포트 중...' : '임포트 실행'}
+          </button>
+        </div>
+
+        {/* 결과 표시 */}
+        {result && (
+          <div className={`p-4 rounded-md ${result.failed > 0 ? 'bg-yellow-50' : 'bg-green-50'}`}>
+            <p className="font-semibold mb-2">임포트 결과:</p>
+            <ul className="text-sm space-y-1">
+              <li className="text-green-600">✓ 성공: {result.success}건</li>
+              {result.failed > 0 && (
+                <li className="text-red-600">✗ 실패: {result.failed}건</li>
+              )}
+            </ul>
+            
+            {result.errors && result.errors.length > 0 && (
+              <div className="mt-3">
+                <p className="font-semibold text-sm mb-1">오류 내역:</p>
+                <ul className="text-xs space-y-1 max-h-40 overflow-y-auto">
+                  {result.errors.map((error: string, idx: number) => (
+                    <li key={idx} className="text-red-600">• {error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -26,6 +270,9 @@ export default function AdminPage() {
   
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [showResetModal, setShowResetModal] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -162,6 +409,8 @@ export default function AdminPage() {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <div className="space-y-6">
+            {/* Excel 임포트 추가 */}
+            <ExcelImportSection type="users" onImportComplete={loadData} />
             {/* Create User Form */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-4">사용자 추가</h2>
@@ -204,26 +453,6 @@ export default function AdminPage() {
                   추가
                 </button>
               </form>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  엑셀 파일 업로드
-                </label>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleBulkUpload}
-                  className="block w-full text-sm text-gray-500
-                    file:mr-4 file:py-2 file:px-4
-                    file:rounded-md file:border-0
-                    file:text-sm file:font-semibold
-                    file:bg-primary-50 file:text-primary-700
-                    hover:file:bg-primary-100"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  형식: 아이디, 비밀번호, 이름, 역할
-                </p>
-              </div>
             </div>
 
             {/* Users List */}
@@ -242,6 +471,7 @@ export default function AdminPage() {
                       <th>역할</th>
                       <th>학급 정보</th>
                       <th>생성일</th>
+                      <th>작업</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -265,18 +495,46 @@ export default function AdminPage() {
                           ) : '-'}
                         </td>
                         <td>{new Date(user.created_at).toLocaleDateString('ko-KR')}</td>
+                        {/*=== 작업 버튼 생성 ===*/}
+                        <td>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => {
+                                setSelectedUser(user);
+                                setShowResetModal(true);
+                              }}
+                              className="text-yellow-600 hover:text-yellow-800 text-sm"
+                              title="비밀번호 초기화"
+                            >
+                              🔑
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
+            {/* 비밀번호 초기화 모달 */}
+            {showResetModal && selectedUser && (
+              <ResetPasswordModal
+                user={selectedUser}
+                onClose={() => {
+                  setShowResetModal(false);
+                  setSelectedUser(null);
+                }}
+                onReset={loadData}
+              />
+            )}
           </div>
         )}
 
         {/* Subjects Tab */}
         {activeTab === 'subjects' && (
           <div className="space-y-6">
+            {/*=== Excel 임포트 ===*/}
+            <ExcelImportSection type="subjects" onImportComplete={loadData} />
             {/* Create Subject Form */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-4">과목 추가</h2>
