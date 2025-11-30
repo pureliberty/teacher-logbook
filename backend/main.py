@@ -847,7 +847,7 @@ async def bulk_upload_users(
 
 
 # ==================== 사용자 비밀번호 초기화 ====================
-@app.put("/api/admin/users/{user_id}/reset-password")
+@app.put("/admin/users/{user_id}/reset-password")
 def reset_user_password(
     user_id: str,
     request_body: dict = Body(...),
@@ -887,7 +887,7 @@ def reset_user_password(
 
 
 # ==================== Excel 템플릿 다운로드 ====================
-@app.get("/api/admin/download-template/{template_type}")
+@app.get("/admin/download-template/{template_type}")
 def download_excel_template(
     template_type: str,
     current_user = Depends(get_current_user)
@@ -961,7 +961,7 @@ def download_excel_template(
 
 
 # ==================== Excel 파일 업로드 및 임포트 ====================
-@app.post("/api/admin/import-excel/{import_type}")
+@app.post("/admin/import-excel/{import_type}")
 async def import_excel(
     import_type: str,
     file: UploadFile = File(...),
@@ -1142,7 +1142,7 @@ async def import_excel(
 
 
 # ==================== 사용자 일괄 삭제 ====================
-@app.post("/api/admin/users/bulk-delete")
+@app.post("/admin/users/bulk-delete")
 def bulk_delete_users(
     user_ids: List[str] = Body(...),
     current_user = Depends(get_current_user),
