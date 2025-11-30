@@ -174,20 +174,12 @@ class RecordVersion(BaseModel):
 
 # Utility functions
 def calculate_byte_count(text: str) -> tuple:
-    """
-    Calculate character count and byte count.
-    Byte count = (Korean chars * 3) + (Other chars * 1) + (Newlines * 2)
-    """
     if not text:
         return 0, 0
-    
     char_count = len(text)
     korean_count = len(re.findall(r'[가-힣]', text))
     newline_count = text.count('\n')
-    other_count = char_count - korean_count - newline_count
-    
-    byte_count = (korean_count * 3) + other_count + (newline_count * 2)
-    
+    byte_count = korean_count * 3 + (char_count - korean_count - newline_count) + newline_count * 2
     return char_count, byte_count
 
 
@@ -201,22 +193,52 @@ def get_password_hash(password):
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-# Database dependency
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+def _build_record_response(r, include_lock=False):
+    """Build record response dict"""
+    response = {
+        "id": r.id,
+        "student_user_id": r.student_user_id,
+        "subject_id": r.subject_id,
+        "content": r.content,
+        "char_count": r.char_count,
+        "byte_count": r.byte_count,
+        "is_editable_by_student": r.is_editable_by_student,
+        "created_at": r.created_at,
+        "updated_at": r.updated_at,
+    }
+    if hasattr(r, 'student_name'):
+        response.update({"student_name": r.student_name, "subject_name": r.subject_name})
+    if include_lock:
+        lock_owner = get_lock_owner(r.id)
+        response.update({"is_locked": lock_owner is not None, "locked_by": lock_owner})
+    return response
+
+
+def _build_user_response(u):
+    """Build user response dict"""
+    return {
+        "id": u.id,
+        "user_id": u.user_id,
+        "full_name": u.full_name,
+        "role": u.role,
+        "grade": u.grade,
+        "class_number": u.class_number,
+        "number_in_class": u.number_in_class,
+        "created_at": u.created_at
+    }
 
 
 # Auth dependency
@@ -358,8 +380,6 @@ async def update_user_me(
     
     if update_data:
         update_data["updated_at"] = datetime.utcnow()
-        
-        # Build UPDATE query dynamically
         set_clause = ", ".join([f"{k} = :{k}" for k in update_data.keys()])
         query = f"UPDATE users SET {set_clause} WHERE user_id = :user_id RETURNING *"
         update_data["user_id"] = current_user.user_id
@@ -368,18 +388,9 @@ async def update_user_me(
         db.commit()
         updated_user = result.fetchone()
         
-        return {
-            "id": updated_user.id,
-            "user_id": updated_user.user_id,
-            "full_name": updated_user.full_name,
-            "role": updated_user.role,
-            "grade": updated_user.grade,
-            "class_number": updated_user.class_number,
-            "number_in_class": updated_user.number_in_class,
-            "created_at": updated_user.created_at
-        }
+        return _build_user_response(updated_user)
     
-    return current_user
+    return _build_user_response(current_user)
 
 
 @app.get("/subjects", response_model=List[Subject])
@@ -446,64 +457,29 @@ async def get_records(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get records with filtering"""
-    
-    # Students can only view their own records
     if current_user.role == 'student':
         student_user_id = current_user.user_id
-    
-    # Build query
-    query = """
-        SELECT r.*, u.full_name as student_name, s.subject_name
-        FROM records r
-        LEFT JOIN users u ON r.student_user_id = u.user_id
-        LEFT JOIN subjects s ON r.subject_id = s.id
-        WHERE 1=1
-    """
+
+    query = "SELECT r.*, u.full_name as student_name, s.subject_name FROM records r LEFT JOIN users u ON r.student_user_id = u.user_id LEFT JOIN subjects s ON r.subject_id = s.id WHERE 1=1"
     params = {}
     
     if student_user_id:
         query += " AND r.student_user_id = :student_user_id"
         params["student_user_id"] = student_user_id
-    
     if subject_id:
         query += " AND r.subject_id = :subject_id"
         params["subject_id"] = subject_id
-    
     if grade:
         query += " AND u.grade = :grade"
         params["grade"] = grade
-    
     if class_number:
         query += " AND u.class_number = :class_number"
         params["class_number"] = class_number
-    
+
     query += " ORDER BY u.grade, u.class_number, u.number_in_class, s.subject_name"
     
-    result = db.execute(query, params)
-    records = result.fetchall()
-    
-    # Check lock status for each record
-    records_with_lock = []
-    for r in records:
-        lock_owner = get_lock_owner(r.id)
-        records_with_lock.append({
-            "id": r.id,
-            "student_user_id": r.student_user_id,
-            "subject_id": r.subject_id,
-            "content": r.content,
-            "char_count": r.char_count,
-            "byte_count": r.byte_count,
-            "is_editable_by_student": r.is_editable_by_student,
-            "created_at": r.created_at,
-            "updated_at": r.updated_at,
-            "student_name": r.student_name,
-            "subject_name": r.subject_name,
-            "is_locked": lock_owner is not None,
-            "locked_by": lock_owner
-        })
-    
-    return records_with_lock
+    records = db.execute(query, params).fetchall()
+    return [_build_record_response(r, include_lock=True) for r in records]
 
 
 @app.get("/records/{record_id}", response_model=RecordWithDetails)
@@ -512,44 +488,18 @@ async def get_record(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get a specific record"""
-    
     result = db.execute(
-        """
-        SELECT r.*, u.full_name as student_name, s.subject_name
-        FROM records r
-        LEFT JOIN users u ON r.student_user_id = u.user_id
-        LEFT JOIN subjects s ON r.subject_id = s.id
-        WHERE r.id = :record_id
-        """,
+        "SELECT r.*, u.full_name as student_name, s.subject_name FROM records r LEFT JOIN users u ON r.student_user_id = u.user_id LEFT JOIN subjects s ON r.subject_id = s.id WHERE r.id = :record_id",
         {"record_id": record_id}
     )
     record = result.fetchone()
     
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
-    # Students can only view their own records
     if current_user.role == 'student' and record.student_user_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    lock_owner = get_lock_owner(record.id)
-    
-    return {
-        "id": record.id,
-        "student_user_id": record.student_user_id,
-        "subject_id": record.subject_id,
-        "content": record.content,
-        "char_count": record.char_count,
-        "byte_count": record.byte_count,
-        "is_editable_by_student": record.is_editable_by_student,
-        "created_at": record.created_at,
-        "updated_at": record.updated_at,
-        "student_name": record.student_name,
-        "subject_name": record.subject_name,
-        "is_locked": lock_owner is not None,
-        "locked_by": lock_owner
-    }
+    return _build_record_response(record, include_lock=True)
 
 
 @app.post("/records", response_model=Record)
@@ -558,22 +508,14 @@ async def create_record(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new record"""
-    
-    # Only teachers and admin can create records
     if current_user.role == 'student':
         raise HTTPException(status_code=403, detail="Students cannot create records")
     
-    # Calculate counts
     char_count, byte_count = calculate_byte_count(record.content)
     
     try:
         result = db.execute(
-            """
-            INSERT INTO records (student_user_id, subject_id, content, char_count, byte_count)
-            VALUES (:student_user_id, :subject_id, :content, :char_count, :byte_count)
-            RETURNING *
-            """,
+            "INSERT INTO records (student_user_id, subject_id, content, char_count, byte_count) VALUES (:student_user_id, :subject_id, :content, :char_count, :byte_count) RETURNING *",
             {
                 "student_user_id": record.student_user_id,
                 "subject_id": record.subject_id,
@@ -585,12 +527,8 @@ async def create_record(
         db.commit()
         new_record = result.fetchone()
         
-        # Create version history
         db.execute(
-            """
-            INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type)
-            VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)
-            """,
+            "INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type) VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)",
             {
                 "record_id": new_record.id,
                 "content": record.content,
@@ -602,17 +540,7 @@ async def create_record(
         )
         db.commit()
         
-        return {
-            "id": new_record.id,
-            "student_user_id": new_record.student_user_id,
-            "subject_id": new_record.subject_id,
-            "content": new_record.content,
-            "char_count": new_record.char_count,
-            "byte_count": new_record.byte_count,
-            "is_editable_by_student": new_record.is_editable_by_student,
-            "created_at": new_record.created_at,
-            "updated_at": new_record.updated_at
-        }
+        return _build_record_response(new_record)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -652,29 +580,17 @@ async def lock_record(
 
 
 @app.delete("/records/{record_id}/lock")
-async def unlock_record(
-    record_id: int,
-    current_user = Depends(get_current_user)
-):
-    """Release lock on a record"""
-    
+async def unlock_record(record_id: int, current_user = Depends(get_current_user)):
     if release_lock(record_id, current_user.user_id):
         return {"message": "Lock released"}
-    else:
-        raise HTTPException(status_code=400, detail="You don't own this lock")
+    raise HTTPException(status_code=400, detail="You don't own this lock")
 
 
 @app.put("/records/{record_id}/lock/extend")
-async def extend_record_lock(
-    record_id: int,
-    current_user = Depends(get_current_user)
-):
-    """Extend lock duration"""
-    
+async def extend_record_lock(record_id: int, current_user = Depends(get_current_user)):
     if extend_lock(record_id, current_user.user_id):
         return {"message": "Lock extended"}
-    else:
-        raise HTTPException(status_code=400, detail="You don't own this lock")
+    raise HTTPException(status_code=400, detail="You don't own this lock")
 
 
 @app.put("/records/{record_id}", response_model=Record)
@@ -684,40 +600,27 @@ async def update_record(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update a record"""
-    
-    # Check if record exists
     result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
     record = result.fetchone()
     
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
     
-    # Check permissions
     if current_user.role == 'student':
         if record.student_user_id != current_user.user_id:
             raise HTTPException(status_code=403, detail="Access denied")
         if not record.is_editable_by_student:
             raise HTTPException(status_code=403, detail="Record not editable by student")
     
-    # Check lock
     lock_owner = get_lock_owner(record_id)
     if lock_owner and lock_owner != current_user.user_id:
         raise HTTPException(status_code=423, detail=f"Record is locked by {lock_owner}")
     
-    # Calculate counts
     char_count, byte_count = calculate_byte_count(record_update.content)
     
     try:
-        # Update record
         result = db.execute(
-            """
-            UPDATE records
-            SET content = :content, char_count = :char_count, byte_count = :byte_count,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = :id
-            RETURNING *
-            """,
+            "UPDATE records SET content = :content, char_count = :char_count, byte_count = :byte_count, updated_at = CURRENT_TIMESTAMP WHERE id = :id RETURNING *",
             {
                 "id": record_id,
                 "content": record_update.content,
@@ -728,12 +631,8 @@ async def update_record(
         db.commit()
         updated_record = result.fetchone()
         
-        # Create version history
         db.execute(
-            """
-            INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type)
-            VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)
-            """,
+            "INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type) VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)",
             {
                 "record_id": record_id,
                 "content": record_update.content,
@@ -745,20 +644,9 @@ async def update_record(
         )
         db.commit()
         
-        # Release lock
         release_lock(record_id, current_user.user_id)
         
-        return {
-            "id": updated_record.id,
-            "student_user_id": updated_record.student_user_id,
-            "subject_id": updated_record.subject_id,
-            "content": updated_record.content,
-            "char_count": updated_record.char_count,
-            "byte_count": updated_record.byte_count,
-            "is_editable_by_student": updated_record.is_editable_by_student,
-            "created_at": updated_record.created_at,
-            "updated_at": updated_record.updated_at
-        }
+        return _build_record_response(updated_record)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -771,23 +659,12 @@ async def update_record_permissions(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update student edit permissions for a record"""
-    
-    # Only teachers and admin can change permissions
     if current_user.role == 'student':
         raise HTTPException(status_code=403, detail="Students cannot change permissions")
     
     try:
-        db.execute(
-            """
-            UPDATE records
-            SET is_editable_by_student = :is_editable, updated_at = CURRENT_TIMESTAMP
-            WHERE id = :id
-            """,
-            {"id": record_id, "is_editable": is_editable}
-        )
+        db.execute("UPDATE records SET is_editable_by_student = :is_editable, updated_at = CURRENT_TIMESTAMP WHERE id = :id", {"id": record_id, "is_editable": is_editable})
         db.commit()
-        
         return {"message": "Permissions updated", "is_editable_by_student": is_editable}
     except Exception as e:
         db.rollback()
@@ -800,27 +677,15 @@ async def get_record_versions(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get version history for a record"""
-    
-    # Check if record exists
     result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
     record = result.fetchone()
     
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
-    # Students can only view versions of their own records
     if current_user.role == 'student' and record.student_user_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    result = db.execute(
-        """
-        SELECT * FROM record_versions
-        WHERE record_id = :record_id
-        ORDER BY created_at DESC
-        """,
-        {"record_id": record_id}
-    )
+    result = db.execute("SELECT * FROM record_versions WHERE record_id = :record_id ORDER BY created_at DESC", {"record_id": record_id})
     versions = result.fetchall()
     
     return [
@@ -844,39 +709,18 @@ async def get_record_comments(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get comments for a record"""
-    
-    # Check if record exists
     result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
     record = result.fetchone()
     
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
-    
-    # Students can only view comments on their own records
     if current_user.role == 'student' and record.student_user_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    result = db.execute(
-        """
-        SELECT * FROM comments
-        WHERE record_id = :record_id
-        ORDER BY created_at DESC
-        """,
-        {"record_id": record_id}
-    )
+    result = db.execute("SELECT * FROM comments WHERE record_id = :record_id ORDER BY created_at DESC", {"record_id": record_id})
     comments = result.fetchall()
     
-    return [
-        {
-            "id": c.id,
-            "record_id": c.record_id,
-            "user_id": c.user_id,
-            "comment_text": c.comment_text,
-            "created_at": c.created_at
-        }
-        for c in comments
-    ]
+    return [{"id": c.id, "record_id": c.record_id, "user_id": c.user_id, "comment_text": c.comment_text, "created_at": c.created_at} for c in comments]
 
 
 @app.post("/records/{record_id}/comments", response_model=Comment)
@@ -886,42 +730,24 @@ async def create_comment(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Add a comment to a record"""
-    
-    # Check if record exists
     result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
     record = result.fetchone()
     
     if not record:
         raise HTTPException(status_code=404, detail="Record not found")
     
-    # Students can only comment on their own records
     if current_user.role == 'student' and record.student_user_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
     try:
         result = db.execute(
-            """
-            INSERT INTO comments (record_id, user_id, comment_text)
-            VALUES (:record_id, :user_id, :comment_text)
-            RETURNING *
-            """,
-            {
-                "record_id": record_id,
-                "user_id": current_user.user_id,
-                "comment_text": comment.comment_text
-            }
+            "INSERT INTO comments (record_id, user_id, comment_text) VALUES (:record_id, :user_id, :comment_text) RETURNING *",
+            {"record_id": record_id, "user_id": current_user.user_id, "comment_text": comment.comment_text}
         )
         db.commit()
         new_comment = result.fetchone()
         
-        return {
-            "id": new_comment.id,
-            "record_id": new_comment.record_id,
-            "user_id": new_comment.user_id,
-            "comment_text": new_comment.comment_text,
-            "created_at": new_comment.created_at
-        }
+        return {"id": new_comment.id, "record_id": new_comment.record_id, "user_id": new_comment.user_id, "comment_text": new_comment.comment_text, "created_at": new_comment.created_at}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -933,27 +759,12 @@ async def get_all_users(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all users (admin only)"""
-    
     if current_user.role != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
     
     result = db.execute("SELECT * FROM users ORDER BY user_id")
     users = result.fetchall()
-    
-    return [
-        {
-            "id": u.id,
-            "user_id": u.user_id,
-            "full_name": u.full_name,
-            "role": u.role,
-            "grade": u.grade,
-            "class_number": u.class_number,
-            "number_in_class": u.number_in_class,
-            "created_at": u.created_at
-        }
-        for u in users
-    ]
+    return [_build_user_response(u) for u in users]
 
 
 @app.post("/admin/users", response_model=User)
@@ -962,8 +773,6 @@ async def create_user(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new user (admin only)"""
-    
     if current_user.role != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
     
@@ -971,11 +780,7 @@ async def create_user(
         password_hash = get_password_hash(user.password)
         
         result = db.execute(
-            """
-            INSERT INTO users (user_id, password_hash, full_name, role, grade, class_number, number_in_class)
-            VALUES (:user_id, :password_hash, :full_name, :role, :grade, :class_number, :number_in_class)
-            RETURNING *
-            """,
+            "INSERT INTO users (user_id, password_hash, full_name, role, grade, class_number, number_in_class) VALUES (:user_id, :password_hash, :full_name, :role, :grade, :class_number, :number_in_class) RETURNING *",
             {
                 "user_id": user.user_id,
                 "password_hash": password_hash,
@@ -989,16 +794,7 @@ async def create_user(
         db.commit()
         new_user = result.fetchone()
         
-        return {
-            "id": new_user.id,
-            "user_id": new_user.user_id,
-            "full_name": new_user.full_name,
-            "role": new_user.role,
-            "grade": new_user.grade,
-            "class_number": new_user.class_number,
-            "number_in_class": new_user.number_in_class,
-            "created_at": new_user.created_at
-        }
+        return _build_user_response(new_user)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))

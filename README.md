@@ -78,40 +78,32 @@
 - 포트 40000 사용 가능
 - Docker 네트워크 생성 권한
 
-### 실행 방법
+### 빠른 시작
 
-1. **프로젝트 클론 또는 다운로드**
-```bash
-cd teacher-logbook
-```
-
-2. **외부 네트워크 생성 (최초 1회만)**
+1. 네트워크 생성 (최초 1회)
 ```bash
 docker network create logbook-network
 ```
 
-3. **Docker Compose로 빌드 및 실행**
+2. 실행
 ```bash
+cd teacher-logbook
 docker-compose up -d --build
 ```
 
-4. **빌드 및 초기 설정 확인**
+3. 로그 확인
 ```bash
-# 로그 확인
 docker-compose logs -f
-
-# 서비스 상태 확인
-docker-compose ps
 ```
 
-5. **웹 브라우저에서 접속**
-```
-http://localhost:40000
-```
+### 접속
 
-⚠️ **중요**: 
-- 네트워크를 먼저 생성하지 않으면 에러가 발생합니다. 자세한 내용은 `NETWORK_SETUP.md`를 참조하세요.
-- 상위 경로에서 `docker build .` 실행 시 오류가 발생합니다. `docker-compose`를 사용하거나 `BUILD.md`를 참조하세요.
+- **대시보드**: http://localhost:40000
+- **API**: http://localhost:8000
+- **기본 계정**:
+  - 관리자: `root2025` / `1234!`
+  - 교사: `T0200` / `1234!`
+  - 학생: `S20101` / `1234!`
 
 ### 초기 로그인 정보
 - **관리자**: `root2025` / `1234!`

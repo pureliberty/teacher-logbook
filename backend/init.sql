@@ -1,8 +1,6 @@
--- Create database if not exists
-CREATE DATABASE IF NOT EXISTS teacher_logbook;
-
--- Create extensions
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- PostgreSQL initialization script for teacher-logbook
+-- Database created by POSTGRES_DB environment variable
+-- Extensions (optional)
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (

@@ -1,10 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import { adminApi, subjectApi } from '../utils/api';
 import type { User, Subject } from '../types';
 
-// 비밀번호 초기화 모달
+interface ModalProps {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}
+
+function Modal({ title, children, onClose }: ModalProps) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-96">
+        <h3 className="text-lg font-semibold mb-4">{title}</h3>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 interface ResetPasswordModalProps {
   user: User;
   onClose: () => void;
@@ -43,16 +59,11 @@ function ResetPasswordModal({ user, onClose, onReset }: ResetPasswordModalProps)
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 w-96">
-        <h3 className="text-lg font-semibold mb-4">비밀번호 초기화</h3>
-        
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 mb-2">사용자: {user.user_id}</p>
-          
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            새 비밀번호
-          </label>
+    <Modal title="비밀번호 초기화" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">사용자: {user.user_id}</p>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">새 비밀번호</label>
           <input
             type="text"
             value={newPassword}
@@ -61,28 +72,17 @@ function ResetPasswordModal({ user, onClose, onReset }: ResetPasswordModalProps)
             placeholder="새 비밀번호"
           />
         </div>
-
         <div className="flex justify-end space-x-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-800"
-          >
-            취소
-          </button>
-          <button
-            onClick={handleReset}
-            disabled={loading || !newPassword}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:text-gray-800">취소</button>
+          <button onClick={handleReset} disabled={loading || !newPassword} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
             {loading ? '처리 중...' : '초기화'}
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-// Excel 임포트 컴포넌트
 interface ExcelImportSectionProps {
   type: 'users' | 'subjects';
   onImportComplete: () => void;
@@ -98,9 +98,7 @@ function ExcelImportSection({ type, onImportComplete }: ExcelImportSectionProps)
   const handleDownloadTemplate = async () => {
     try {
       const response = await fetch(`/api/admin/download-template/${type}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
       });
 
       if (response.ok) {
@@ -138,19 +136,14 @@ function ExcelImportSection({ type, onImportComplete }: ExcelImportSectionProps)
 
       const response = await fetch(`/api/admin/import-excel/${type}`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
         body: formData
       });
 
       if (response.ok) {
         const data = await response.json();
         setResult(data);
-        
-        if (data.success > 0) {
-          onImportComplete();
-        }
+        if (data.success > 0) onImportComplete();
       } else {
         alert('임포트 실패');
       }
@@ -165,72 +158,44 @@ function ExcelImportSection({ type, onImportComplete }: ExcelImportSectionProps)
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
       <h3 className="text-lg font-semibold mb-4">{typeName} Excel 임포트</h3>
-
       <div className="space-y-4">
-        {/* 템플릿 다운로드 */}
-        <div>
-          <button
-            onClick={handleDownloadTemplate}
-            className="flex items-center space-x-2 text-blue-600 hover:text-blue-800"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span>📥 Excel 템플릿 다운로드</span>
-          </button>
-        </div>
+        <button onClick={handleDownloadTemplate} className="flex items-center space-x-2 text-blue-600 hover:text-blue-800">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>📥 Excel 템플릿 다운로드</span>
+        </button>
 
-        {/* 파일 업로드 */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Excel 파일 선택
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Excel 파일 선택</label>
           <input
             type="file"
             accept=".xlsx,.xls"
             onChange={handleFileChange}
-            className="block w-full text-sm text-gray-500
-              file:mr-4 file:py-2 file:px-4
-              file:rounded-md file:border-0
-              file:text-sm file:font-semibold
-              file:bg-blue-50 file:text-blue-700
-              hover:file:bg-blue-100"
+            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
           />
-          {file && (
-            <p className="text-sm text-gray-600 mt-1">
-              선택된 파일: {file.name}
-            </p>
-          )}
+          {file && <p className="text-sm text-gray-600 mt-1">선택된 파일: {file.name}</p>}
         </div>
 
-        {/* 임포트 버튼 */}
-        <div>
-          <button
-            onClick={handleImport}
-            disabled={!file || importing}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {importing && (
-              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            )}
-            {importing ? '임포트 중...' : '임포트 실행'}
-          </button>
-        </div>
+        <button
+          onClick={handleImport}
+          disabled={!file || importing}
+          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {importing && <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>}
+          {importing ? '임포트 중...' : '임포트 실행'}
+        </button>
 
-        {/* 결과 표시 */}
         {result && (
           <div className={`p-4 rounded-md ${result.failed > 0 ? 'bg-yellow-50' : 'bg-green-50'}`}>
             <p className="font-semibold mb-2">임포트 결과:</p>
             <ul className="text-sm space-y-1">
               <li className="text-green-600">✓ 성공: {result.success}건</li>
-              {result.failed > 0 && (
-                <li className="text-red-600">✗ 실패: {result.failed}건</li>
-              )}
+              {result.failed > 0 && <li className="text-red-600">✗ 실패: {result.failed}건</li>}
             </ul>
-            
             {result.errors && result.errors.length > 0 && (
               <div className="mt-3">
                 <p className="font-semibold text-sm mb-1">오류 내역:</p>
@@ -362,105 +327,51 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <h1 className="text-2xl font-bold text-gray-900">관리자 설정</h1>
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-            >
+            <button onClick={() => navigate('/dashboard')} className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50">
               대시보드로 돌아가기
             </button>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {error && <div className="alert-error mb-4">{error}</div>}
         {success && <div className="alert-success mb-4">{success}</div>}
 
-        {/* Tabs */}
         <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setActiveTab('users')}
-            className={`px-6 py-3 rounded-md font-medium ${
-              activeTab === 'users'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
+          <button onClick={() => setActiveTab('users')} className={`px-6 py-3 rounded-md font-medium ${activeTab === 'users' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
             사용자 관리
           </button>
-          <button
-            onClick={() => setActiveTab('subjects')}
-            className={`px-6 py-3 rounded-md font-medium ${
-              activeTab === 'subjects'
-                ? 'bg-primary-600 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
+          <button onClick={() => setActiveTab('subjects')} className={`px-6 py-3 rounded-md font-medium ${activeTab === 'subjects' ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>
             과목 관리
           </button>
         </div>
 
-        {/* Users Tab */}
         {activeTab === 'users' && (
           <div className="space-y-6">
-            {/* Excel 임포트 추가 */}
             <ExcelImportSection type="users" onImportComplete={loadData} />
-            {/* Create User Form */}
+            
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-4">사용자 추가</h2>
               <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-5 gap-4">
-                <input
-                  type="text"
-                  placeholder="아이디"
-                  value={newUserId}
-                  onChange={(e) => setNewUserId(e.target.value)}
-                  required
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-                <input
-                  type="password"
-                  placeholder="비밀번호"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-                <input
-                  type="text"
-                  placeholder="이름 (선택)"
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-                <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as any)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
+                <input type="text" placeholder="아이디" value={newUserId} onChange={(e) => setNewUserId(e.target.value)} required className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                <input type="password" placeholder="비밀번호" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                <input type="text" placeholder="이름 (선택)" value={newFullName} onChange={(e) => setNewFullName(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                <select value={newRole} onChange={(e) => setNewRole(e.target.value as any)} className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500">
                   <option value="student">학생</option>
                   <option value="teacher">교사</option>
                 </select>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-                >
-                  추가
-                </button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">추가</button>
               </form>
             </div>
 
-            {/* Users List */}
             <div className="bg-white rounded-lg shadow-sm">
               <div className="p-6">
-                <h2 className="text-xl font-semibold mb-4">
-                  전체 사용자 ({users.length})
-                </h2>
+                <h2 className="text-xl font-semibold mb-4">전체 사용자 ({users.length})</h2>
               </div>
               <div className="table-container">
                 <table className="data-table">
@@ -485,30 +396,13 @@ export default function AdminPage() {
                             user.role === 'teacher' ? 'bg-blue-100 text-blue-800' :
                             'bg-green-100 text-green-800'
                           }`}>
-                            {user.role === 'admin' ? '관리자' :
-                             user.role === 'teacher' ? '교사' : '학생'}
+                            {user.role === 'admin' ? '관리자' : user.role === 'teacher' ? '교사' : '학생'}
                           </span>
                         </td>
-                        <td>
-                          {user.role === 'student' && user.grade ? (
-                            `${user.grade}학년 ${user.class_number}반 ${user.number_in_class}번`
-                          ) : '-'}
-                        </td>
+                        <td>{user.role === 'student' && user.grade ? `${user.grade}학년 ${user.class_number}반 ${user.number_in_class}번` : '-'}</td>
                         <td>{new Date(user.created_at).toLocaleDateString('ko-KR')}</td>
-                        {/*=== 작업 버튼 생성 ===*/}
                         <td>
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => {
-                                setSelectedUser(user);
-                                setShowResetModal(true);
-                              }}
-                              className="text-yellow-600 hover:text-yellow-800 text-sm"
-                              title="비밀번호 초기화"
-                            >
-                              🔑
-                            </button>
-                          </div>
+                          <button onClick={() => { setSelectedUser(user); setShowResetModal(true); }} className="text-yellow-600 hover:text-yellow-800 text-sm" title="비밀번호 초기화">🔑</button>
                         </td>
                       </tr>
                     ))}
@@ -516,67 +410,30 @@ export default function AdminPage() {
                 </table>
               </div>
             </div>
-            {/* 비밀번호 초기화 모달 */}
+            
             {showResetModal && selectedUser && (
-              <ResetPasswordModal
-                user={selectedUser}
-                onClose={() => {
-                  setShowResetModal(false);
-                  setSelectedUser(null);
-                }}
-                onReset={loadData}
-              />
+              <ResetPasswordModal user={selectedUser} onClose={() => { setShowResetModal(false); setSelectedUser(null); }} onReset={loadData} />
             )}
           </div>
         )}
 
-        {/* Subjects Tab */}
         {activeTab === 'subjects' && (
           <div className="space-y-6">
-            {/*=== Excel 임포트 ===*/}
             <ExcelImportSection type="subjects" onImportComplete={loadData} />
-            {/* Create Subject Form */}
+            
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-4">과목 추가</h2>
               <form onSubmit={handleCreateSubject} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <input
-                  type="text"
-                  placeholder="과목명"
-                  value={newSubjectName}
-                  onChange={(e) => setNewSubjectName(e.target.value)}
-                  required
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-                <input
-                  type="text"
-                  placeholder="과목 코드"
-                  value={newSubjectCode}
-                  onChange={(e) => setNewSubjectCode(e.target.value)}
-                  required
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-                <input
-                  type="text"
-                  placeholder="설명 (선택)"
-                  value={newSubjectDesc}
-                  onChange={(e) => setNewSubjectDesc(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-                >
-                  추가
-                </button>
+                <input type="text" placeholder="과목명" value={newSubjectName} onChange={(e) => setNewSubjectName(e.target.value)} required className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                <input type="text" placeholder="과목 코드" value={newSubjectCode} onChange={(e) => setNewSubjectCode(e.target.value)} required className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                <input type="text" placeholder="설명 (선택)" value={newSubjectDesc} onChange={(e) => setNewSubjectDesc(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500" />
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700">추가</button>
               </form>
             </div>
 
-            {/* Subjects List */}
             <div className="bg-white rounded-lg shadow-sm">
               <div className="p-6">
-                <h2 className="text-xl font-semibold mb-4">
-                  전체 과목 ({subjects.length})
-                </h2>
+                <h2 className="text-xl font-semibold mb-4">전체 과목 ({subjects.length})</h2>
               </div>
               <div className="table-container">
                 <table className="data-table">
