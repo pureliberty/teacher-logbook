@@ -1,9 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Body
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, Text, DateTime, ForeignKey
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session, relationship
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime, timedelta
 from typing import Optional, List
 from pydantic import BaseModel
@@ -26,7 +26,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
 # Database setup
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 # Redis setup
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
@@ -174,7 +173,7 @@ class RecordVersion(BaseModel):
 
 
 # Utility functions
-def calculate_byte_count(text: str) -> tuple[int, int]:
+def calculate_byte_count(text: str) -> tuple:
     """
     Calculate character count and byte count.
     Byte count = (Korean chars * 3) + (Other chars * 1) + (Newlines * 2)
@@ -295,6 +294,11 @@ def extend_lock(record_id: int, user_id: str, duration_minutes: int = 30) -> boo
 @app.get("/")
 async def root():
     return {"message": "Teacher Logbook API", "version": "1.0.0"}
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
 
 
 @app.post("/token", response_model=Token)
@@ -432,9 +436,6 @@ async def create_subject(
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-
-# Continue in next file...
-# This file continues from main.py - append these routes to main.py
 
 @app.get("/records", response_model=List[RecordWithDetails])
 async def get_records(
@@ -1048,41 +1049,57 @@ async def bulk_upload_users(
         "errors": errors
     }
 
-# =========================== 사용자 비밀번호 초기화 ============================
+
+# ==================== 사용자 비밀번호 초기화 ====================
 @app.put("/api/admin/users/{user_id}/reset-password")
 def reset_user_password(
     user_id: str,
-    new_password: str = Body(..., embed=True),
-    current_user = dict = Depends(get_current_user),
+    request_body: dict = Body(...),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Reset a user's password (admin only)"""
     
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin access Only")
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     
-    user = db.query(User).filter(User.user_id == user_id).first()
+    new_password = request_body.get("new_password")
+    if not new_password:
+        raise HTTPException(status_code=400, detail="new_password required")
+    
+    # Raw SQL로 사용자 조회
+    result = db.execute(
+        "SELECT * FROM users WHERE user_id = :user_id",
+        {"user_id": user_id}
+    )
+    user = result.fetchone()
+    
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # 비밀번호 해시 생성
+    # 비밀번호 해싱
     hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-    user.password_hash = hashed.decode('utf-8')
     
+    # 업데이트
+    db.execute(
+        "UPDATE users SET password_hash = :password_hash WHERE user_id = :user_id",
+        {"password_hash": hashed.decode('utf-8'), "user_id": user_id}
+    )
     db.commit()
     
-    return {
-        "message": f"Password reset for {user_id}"
-    }
+    return {"message": f"Password reset for {user_id}"}
 
-# =========================== Excel 템플릿 다운로드  ===========================
+
+# ==================== Excel 템플릿 다운로드 ====================
 @app.get("/api/admin/download-template/{template_type}")
 def download_excel_template(
     template_type: str,
-    current_user: dict = Depends(get_current_user)
+    current_user = Depends(get_current_user)
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin access Only")
+    """Download Excel template (admin only)"""
+    
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     
     wb = Workbook()
     
@@ -1090,7 +1107,7 @@ def download_excel_template(
         ws = wb.active
         ws.title = "Users"
         
-        # 헤더 작성
+        # 헤더
         headers = ["user_id", "password", "full_name", "role", "student_number", "grade", "class_number", "number_in_class"]
         ws.append(headers)
         
@@ -1117,19 +1134,19 @@ def download_excel_template(
         ws.title = "Subjects"
         
         # 헤더
-        headers = ["subject_name", "subject_name", "description"]
+        headers = ["subject_code", "subject_name", "description"]
         ws.append(headers)
         
         # 예시 데이터
         ws.append(["KOR", "국어", "국어 과목"])
-        ws.append(["MATH", "수학", "수학 과목"])
         ws.append(["ENG", "영어", "영어 과목"])
+        ws.append(["MATH", "수학", "수학 과목"])
         
         # 열 너비 조정
         ws.column_dimensions['A'].width = 15
         ws.column_dimensions['B'].width = 15
         ws.column_dimensions['C'].width = 30
-        
+    
     else:
         raise HTTPException(status_code=400, detail="Invalid template type")
     
@@ -1145,19 +1162,22 @@ def download_excel_template(
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-    
-# =========================== Excel 파일  업로드 및 임포트  ===========================
+
+
+# ==================== Excel 파일 업로드 및 임포트 ====================
 @app.post("/api/admin/import-excel/{import_type}")
 async def import_excel(
     import_type: str,
     file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin access Only")
+    """Import data from Excel file (admin only)"""
     
-    # 엑셀 파일 읽기
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    
+    # 파일 읽기
     contents = await file.read()
     wb = load_workbook(BytesIO(contents))
     ws = wb.active
@@ -1167,7 +1187,7 @@ async def import_excel(
         "failed": 0,
         "errors": []
     }
-
+    
     if import_type == "users":
         # 헤더 건너뛰기
         rows = list(ws.iter_rows(min_row=2, values_only=True))
@@ -1175,13 +1195,13 @@ async def import_excel(
         for idx, row in enumerate(rows, start=2):
             try:
                 user_id, password, full_name, role, student_number, grade, class_number, number_in_class = row
-            
+                
                 # 필수 필드 검증
                 if not user_id or not password or not role:
                     results["errors"].append(f"Row {idx}: Missing required fields")
                     results["failed"] += 1
                     continue
-
+                
                 # 역할 검증
                 if role not in ["admin", "teacher", "student"]:
                     results["errors"].append(f"Row {idx}: Invalid role '{role}'")
@@ -1195,44 +1215,79 @@ async def import_excel(
                         results["failed"] += 1
                         continue
                 
-                # 기존 사용자 확인
-                existing_user = db.query(User).filter(User.user_id == user_id).first()
+                # 기존 사용자 확인 (Raw SQL)
+                result = db.execute(
+                    "SELECT * FROM users WHERE user_id = :user_id",
+                    {"user_id": user_id}
+                )
+                existing_user = result.fetchone()
                 
                 if existing_user:
                     # 업데이트
-                    existing_user.full_name = full_name
-                    if password: # 비밀번호 제공된 경우만 업데이트
-                        hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-                        existing_user.password_hash = hashed.decode('utf-8')
-                    existing_user.role = role
-                    existing_user.student_number = student_number
-                    existing_user.grade = grade
-                    existing_user.class_number = class_number
-                    existing_user.number_in_class = number_in_class
+                    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()) if password else None
+                    
+                    if hashed:
+                        db.execute(
+                            """UPDATE users 
+                               SET full_name = :full_name, password_hash = :password_hash, role = :role,
+                                   student_number = :student_number, grade = :grade, 
+                                   class_number = :class_number, number_in_class = :number_in_class
+                               WHERE user_id = :user_id""",
+                            {
+                                "user_id": user_id,
+                                "full_name": full_name,
+                                "password_hash": hashed.decode('utf-8'),
+                                "role": role,
+                                "student_number": student_number,
+                                "grade": grade,
+                                "class_number": class_number,
+                                "number_in_class": number_in_class
+                            }
+                        )
+                    else:
+                        db.execute(
+                            """UPDATE users 
+                               SET full_name = :full_name, role = :role,
+                                   student_number = :student_number, grade = :grade, 
+                                   class_number = :class_number, number_in_class = :number_in_class
+                               WHERE user_id = :user_id""",
+                            {
+                                "user_id": user_id,
+                                "full_name": full_name,
+                                "role": role,
+                                "student_number": student_number,
+                                "grade": grade,
+                                "class_number": class_number,
+                                "number_in_class": number_in_class
+                            }
+                        )
                 else:
-                    # 새 사용자 생성
+                    # 새로 생성
                     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-                    new_user = User(
-                        user_id=user_id,
-                        password_hash=hashed.decode('utf-8'),
-                        full_name=full_name,
-                        role=role,
-                        student_number=student_number,
-                        grade=grade,
-                        class_number=class_number,
-                        number_in_class=number_in_class
+                    db.execute(
+                        """INSERT INTO users (user_id, password_hash, full_name, role, student_number, grade, class_number, number_in_class)
+                           VALUES (:user_id, :password_hash, :full_name, :role, :student_number, :grade, :class_number, :number_in_class)""",
+                        {
+                            "user_id": user_id,
+                            "password_hash": hashed.decode('utf-8'),
+                            "full_name": full_name,
+                            "role": role,
+                            "student_number": student_number,
+                            "grade": grade,
+                            "class_number": class_number,
+                            "number_in_class": number_in_class
+                        }
                     )
-                    db.add(new_user)
-
+                
+                db.commit()
                 results["success"] += 1
-            
+                
             except Exception as e:
+                db.rollback()
                 results["errors"].append(f"Row {idx}: {str(e)}")
                 results["failed"] += 1
-        
-        db.commit()
     
-    elif import_tyope == "subjects":
+    elif import_type == "subjects":
         rows = list(ws.iter_rows(min_row=2, values_only=True))
         
         for idx, row in enumerate(rows, start=2):
@@ -1245,58 +1300,79 @@ async def import_excel(
                     results["failed"] += 1
                     continue
                 
-                # 기존 과목 확인
-                existing_subject = db.query(Subject).filter(Subject.subject_code == subject_code).first()
+                # 기존 과목 확인 (Raw SQL)
+                result = db.execute(
+                    "SELECT * FROM subjects WHERE subject_code = :subject_code",
+                    {"subject_code": subject_code}
+                )
+                existing_subject = result.fetchone()
                 
                 if existing_subject:
                     # 업데이트
-                    existing_subject.subject_name = subject_name
-                    existing_subject.description = description
-                else:
-                    # 새 과목 생성
-                    new_subject = Subject(
-                        subject_code=subject_code,
-                        subject_name=subject_name,
-                        description=description
+                    db.execute(
+                        """UPDATE subjects 
+                           SET subject_name = :subject_name, description = :description
+                           WHERE subject_code = :subject_code""",
+                        {
+                            "subject_code": subject_code,
+                            "subject_name": subject_name,
+                            "description": description
+                        }
                     )
-                    db.add(new_subject)
+                else:
+                    # 새로 생성
+                    db.execute(
+                        """INSERT INTO subjects (subject_code, subject_name, description)
+                           VALUES (:subject_code, :subject_name, :description)""",
+                        {
+                            "subject_code": subject_code,
+                            "subject_name": subject_name,
+                            "description": description
+                        }
+                    )
                 
+                db.commit()
                 results["success"] += 1
-            
+                
             except Exception as e:
+                db.rollback()
                 results["errors"].append(f"Row {idx}: {str(e)}")
                 results["failed"] += 1
-            
-        db.commit()
-        
+    
     else:
         raise HTTPException(status_code=400, detail="Invalid import type")
     
     return results
 
-# =========================== 사용자 일괄 삭제  ===========================
+
+# ==================== 사용자 일괄 삭제 ====================
 @app.post("/api/admin/users/bulk-delete")
 def bulk_delete_users(
     user_ids: List[str] = Body(...),
-    current_user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="Admin access Only")
+    """Bulk delete users (admin only)"""
+    
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
     
     deleted_count = 0
     
     for user_id in user_ids:
-            user = db.query(User).filter(User.user_id == user_id).first()
-            if user:
-                db.delete(user)
-                deleted_count += 1
-            
-    db.commit()
+        try:
+            db.execute(
+                "DELETE FROM users WHERE user_id = :user_id",
+                {"user_id": user_id}
+            )
+            db.commit()
+            deleted_count += 1
+        except Exception as e:
+            db.rollback()
+            continue
     
-    return {
-        "message": f"{deleted_count} users deleted"
-    }
+    return {"message": f"{deleted_count} users deleted"}
+
 
 if __name__ == "__main__":
     import uvicorn
