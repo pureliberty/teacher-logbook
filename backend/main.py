@@ -37,7 +37,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # FastAPI app
-app = FastAPI(title="Teacher Logbook API", version="1.0.0")
+app = FastAPI(title="Teacher Logbook API", version="1.0.0", root_path="/api")
 
 # CORS
 app.add_middleware(

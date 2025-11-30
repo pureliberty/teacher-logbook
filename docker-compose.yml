@@ -68,7 +68,7 @@ services:
     image: m4rum4ru/teacher-logbook-frontend:latest
     container_name: teacher-logbook-frontend
     ports:
-      - "40000:80"
+      - "40000:40000"
     depends_on:
       - backend
     networks:
