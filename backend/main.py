@@ -34,7 +34,7 @@ redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/token")
 
 # FastAPI app
 app = FastAPI(title="Teacher Logbook API", version="1.0.0", root_path="/api")
@@ -258,7 +258,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     
     user = db.execute(
-        "SELECT * FROM users WHERE user_id = :user_id",
+        text("SELECT * FROM users WHERE user_id = :user_id"),
         {"user_id": token_data.user_id}
     ).fetchone()
     
@@ -327,7 +327,7 @@ async def health():
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     # Query user
     user = db.execute(
-        "SELECT * FROM users WHERE user_id = :user_id",
+        text("SELECT * FROM users WHERE user_id = :user_id"),
         {"user_id": form_data.username}
     ).fetchone()
     
@@ -384,7 +384,7 @@ async def update_user_me(
         query = f"UPDATE users SET {set_clause} WHERE user_id = :user_id RETURNING *"
         update_data["user_id"] = current_user.user_id
         
-        result = db.execute(query, update_data)
+        result = db.execute(text(query), update_data)
         db.commit()
         updated_user = result.fetchone()
         
@@ -398,7 +398,7 @@ async def get_subjects(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = db.execute("SELECT * FROM subjects ORDER BY subject_name")
+    result = db.execute(text("SELECT * FROM subjects ORDER BY subject_name"))
     subjects = result.fetchall()
     return [
         {
@@ -423,11 +423,11 @@ async def create_subject(
     
     try:
         result = db.execute(
-            """
-            INSERT INTO subjects (subject_name, subject_code, description)
-            VALUES (:subject_name, :subject_code, :description)
-            RETURNING *
-            """,
+            text("""
+                INSERT INTO subjects (subject_name, subject_code, description)
+                VALUES (:subject_name, :subject_code, :description)
+                RETURNING *
+                """),
             {
                 "subject_name": subject.subject_name,
                 "subject_code": subject.subject_code,
@@ -478,7 +478,7 @@ async def get_records(
 
     query += " ORDER BY u.grade, u.class_number, u.number_in_class, s.subject_name"
     
-    records = db.execute(query, params).fetchall()
+    records = db.execute(text(query), params).fetchall()
     return [_build_record_response(r, include_lock=True) for r in records]
 
 
@@ -489,7 +489,7 @@ async def get_record(
     db: Session = Depends(get_db)
 ):
     result = db.execute(
-        "SELECT r.*, u.full_name as student_name, s.subject_name FROM records r LEFT JOIN users u ON r.student_user_id = u.user_id LEFT JOIN subjects s ON r.subject_id = s.id WHERE r.id = :record_id",
+        text("SELECT r.*, u.full_name as student_name, s.subject_name FROM records r LEFT JOIN users u ON r.student_user_id = u.user_id LEFT JOIN subjects s ON r.subject_id = s.id WHERE r.id = :record_id"),
         {"record_id": record_id}
     )
     record = result.fetchone()
@@ -515,7 +515,7 @@ async def create_record(
     
     try:
         result = db.execute(
-            "INSERT INTO records (student_user_id, subject_id, content, char_count, byte_count) VALUES (:student_user_id, :subject_id, :content, :char_count, :byte_count) RETURNING *",
+            text("INSERT INTO records (student_user_id, subject_id, content, char_count, byte_count) VALUES (:student_user_id, :subject_id, :content, :char_count, :byte_count) RETURNING *"),
             {
                 "student_user_id": record.student_user_id,
                 "subject_id": record.subject_id,
@@ -528,7 +528,7 @@ async def create_record(
         new_record = result.fetchone()
         
         db.execute(
-            "INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type) VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)",
+            text("INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type) VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)"),
             {
                 "record_id": new_record.id,
                 "content": record.content,
@@ -555,7 +555,7 @@ async def lock_record(
     """Acquire lock for editing a record"""
     
     # Check if record exists
-    result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
+    result = db.execute(text("SELECT * FROM records WHERE id = :id"), {"id": record_id})
     record = result.fetchone()
     
     if not record:
@@ -600,7 +600,7 @@ async def update_record(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
+    result = db.execute(text("SELECT * FROM records WHERE id = :id"), {"id": record_id})
     record = result.fetchone()
     
     if not record:
@@ -620,7 +620,7 @@ async def update_record(
     
     try:
         result = db.execute(
-            "UPDATE records SET content = :content, char_count = :char_count, byte_count = :byte_count, updated_at = CURRENT_TIMESTAMP WHERE id = :id RETURNING *",
+            text("UPDATE records SET content = :content, char_count = :char_count, byte_count = :byte_count, updated_at = CURRENT_TIMESTAMP WHERE id = :id RETURNING *"),
             {
                 "id": record_id,
                 "content": record_update.content,
@@ -632,7 +632,7 @@ async def update_record(
         updated_record = result.fetchone()
         
         db.execute(
-            "INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type) VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)",
+            text("INSERT INTO record_versions (record_id, content, char_count, byte_count, edited_by, edit_type) VALUES (:record_id, :content, :char_count, :byte_count, :edited_by, :edit_type)"),
             {
                 "record_id": record_id,
                 "content": record_update.content,
@@ -663,7 +663,7 @@ async def update_record_permissions(
         raise HTTPException(status_code=403, detail="Students cannot change permissions")
     
     try:
-        db.execute("UPDATE records SET is_editable_by_student = :is_editable, updated_at = CURRENT_TIMESTAMP WHERE id = :id", {"id": record_id, "is_editable": is_editable})
+        db.execute(text("UPDATE records SET is_editable_by_student = :is_editable, updated_at = CURRENT_TIMESTAMP WHERE id = :id"), {"id": record_id, "is_editable": is_editable})
         db.commit()
         return {"message": "Permissions updated", "is_editable_by_student": is_editable}
     except Exception as e:
@@ -677,7 +677,7 @@ async def get_record_versions(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
+    result = db.execute(text("SELECT * FROM records WHERE id = :id"), {"id": record_id})
     record = result.fetchone()
     
     if not record:
@@ -685,7 +685,7 @@ async def get_record_versions(
     if current_user.role == 'student' and record.student_user_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    result = db.execute("SELECT * FROM record_versions WHERE record_id = :record_id ORDER BY created_at DESC", {"record_id": record_id})
+    result = db.execute(text("SELECT * FROM record_versions WHERE record_id = :record_id ORDER BY created_at DESC"), {"record_id": record_id})
     versions = result.fetchall()
     
     return [
@@ -709,7 +709,7 @@ async def get_record_comments(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
+    result = db.execute(text("SELECT * FROM records WHERE id = :id"), {"id": record_id})
     record = result.fetchone()
     
     if not record:
@@ -717,7 +717,7 @@ async def get_record_comments(
     if current_user.role == 'student' and record.student_user_id != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    result = db.execute("SELECT * FROM comments WHERE record_id = :record_id ORDER BY created_at DESC", {"record_id": record_id})
+    result = db.execute(text("SELECT * FROM comments WHERE record_id = :record_id ORDER BY created_at DESC"), {"record_id": record_id})
     comments = result.fetchall()
     
     return [{"id": c.id, "record_id": c.record_id, "user_id": c.user_id, "comment_text": c.comment_text, "created_at": c.created_at} for c in comments]
@@ -730,7 +730,7 @@ async def create_comment(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    result = db.execute("SELECT * FROM records WHERE id = :id", {"id": record_id})
+    result = db.execute(text("SELECT * FROM records WHERE id = :id"), {"id": record_id})
     record = result.fetchone()
     
     if not record:
@@ -741,7 +741,7 @@ async def create_comment(
     
     try:
         result = db.execute(
-            "INSERT INTO comments (record_id, user_id, comment_text) VALUES (:record_id, :user_id, :comment_text) RETURNING *",
+            text("INSERT INTO comments (record_id, user_id, comment_text) VALUES (:record_id, :user_id, :comment_text) RETURNING *"),
             {"record_id": record_id, "user_id": current_user.user_id, "comment_text": comment.comment_text}
         )
         db.commit()
@@ -762,7 +762,7 @@ async def get_all_users(
     if current_user.role != 'admin':
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    result = db.execute("SELECT * FROM users ORDER BY user_id")
+    result = db.execute(text("SELECT * FROM users ORDER BY user_id"))
     users = result.fetchall()
     return [_build_user_response(u) for u in users]
 
@@ -780,7 +780,7 @@ async def create_user(
         password_hash = get_password_hash(user.password)
         
         result = db.execute(
-            "INSERT INTO users (user_id, password_hash, full_name, role, grade, class_number, number_in_class) VALUES (:user_id, :password_hash, :full_name, :role, :grade, :class_number, :number_in_class) RETURNING *",
+            text("INSERT INTO users (user_id, password_hash, full_name, role, grade, class_number, number_in_class) VALUES (:user_id, :password_hash, :full_name, :role, :grade, :class_number, :number_in_class) RETURNING *"),
             {
                 "user_id": user.user_id,
                 "password_hash": password_hash,
@@ -819,10 +819,10 @@ async def bulk_upload_users(
             password_hash = get_password_hash(user.password)
             
             db.execute(
-                """
-                INSERT INTO users (user_id, password_hash, full_name, role, grade, class_number, number_in_class)
-                VALUES (:user_id, :password_hash, :full_name, :role, :grade, :class_number, :number_in_class)
-                """,
+                text("""
+                    INSERT INTO users (user_id, password_hash, full_name, role, grade, class_number, number_in_class)
+                    VALUES (:user_id, :password_hash, :full_name, :role, :grade, :class_number, :number_in_class)
+                    """),
                 {
                     "user_id": user.user_id,
                     "password_hash": password_hash,
@@ -865,7 +865,7 @@ def reset_user_password(
     
     # Raw SQL로 사용자 조회
     result = db.execute(
-        "SELECT * FROM users WHERE user_id = :user_id",
+        text("SELECT * FROM users WHERE user_id = :user_id"),
         {"user_id": user_id}
     )
     user = result.fetchone()
@@ -878,7 +878,7 @@ def reset_user_password(
     
     # 업데이트
     db.execute(
-        "UPDATE users SET password_hash = :password_hash WHERE user_id = :user_id",
+        text("UPDATE users SET password_hash = :password_hash WHERE user_id = :user_id"),
         {"password_hash": hashed.decode('utf-8'), "user_id": user_id}
     )
     db.commit()
@@ -1013,7 +1013,7 @@ async def import_excel(
                 
                 # 기존 사용자 확인 (Raw SQL)
                 result = db.execute(
-                    "SELECT * FROM users WHERE user_id = :user_id",
+                    text("SELECT * FROM users WHERE user_id = :user_id"),
                     {"user_id": user_id}
                 )
                 existing_user = result.fetchone()
@@ -1024,11 +1024,11 @@ async def import_excel(
                     
                     if hashed:
                         db.execute(
-                            """UPDATE users 
-                               SET full_name = :full_name, password_hash = :password_hash, role = :role,
-                                   student_number = :student_number, grade = :grade, 
-                                   class_number = :class_number, number_in_class = :number_in_class
-                               WHERE user_id = :user_id""",
+                            text("""UPDATE users 
+                                   SET full_name = :full_name, password_hash = :password_hash, role = :role,
+                                       student_number = :student_number, grade = :grade, 
+                                       class_number = :class_number, number_in_class = :number_in_class
+                                   WHERE user_id = :user_id"""),
                             {
                                 "user_id": user_id,
                                 "full_name": full_name,
@@ -1042,11 +1042,11 @@ async def import_excel(
                         )
                     else:
                         db.execute(
-                            """UPDATE users 
-                               SET full_name = :full_name, role = :role,
-                                   student_number = :student_number, grade = :grade, 
-                                   class_number = :class_number, number_in_class = :number_in_class
-                               WHERE user_id = :user_id""",
+                            text("""UPDATE users 
+                                   SET full_name = :full_name, role = :role,
+                                       student_number = :student_number, grade = :grade, 
+                                       class_number = :class_number, number_in_class = :number_in_class
+                                   WHERE user_id = :user_id"""),
                             {
                                 "user_id": user_id,
                                 "full_name": full_name,
@@ -1061,8 +1061,8 @@ async def import_excel(
                     # 새로 생성
                     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
                     db.execute(
-                        """INSERT INTO users (user_id, password_hash, full_name, role, student_number, grade, class_number, number_in_class)
-                           VALUES (:user_id, :password_hash, :full_name, :role, :student_number, :grade, :class_number, :number_in_class)""",
+                        text("""INSERT INTO users (user_id, password_hash, full_name, role, student_number, grade, class_number, number_in_class)
+                               VALUES (:user_id, :password_hash, :full_name, :role, :student_number, :grade, :class_number, :number_in_class)"""),
                         {
                             "user_id": user_id,
                             "password_hash": hashed.decode('utf-8'),
@@ -1098,7 +1098,7 @@ async def import_excel(
                 
                 # 기존 과목 확인 (Raw SQL)
                 result = db.execute(
-                    "SELECT * FROM subjects WHERE subject_code = :subject_code",
+                    text("SELECT * FROM subjects WHERE subject_code = :subject_code"),
                     {"subject_code": subject_code}
                 )
                 existing_subject = result.fetchone()
@@ -1106,9 +1106,9 @@ async def import_excel(
                 if existing_subject:
                     # 업데이트
                     db.execute(
-                        """UPDATE subjects 
-                           SET subject_name = :subject_name, description = :description
-                           WHERE subject_code = :subject_code""",
+                        text("""UPDATE subjects 
+                               SET subject_name = :subject_name, description = :description
+                               WHERE subject_code = :subject_code"""),
                         {
                             "subject_code": subject_code,
                             "subject_name": subject_name,
@@ -1118,8 +1118,8 @@ async def import_excel(
                 else:
                     # 새로 생성
                     db.execute(
-                        """INSERT INTO subjects (subject_code, subject_name, description)
-                           VALUES (:subject_code, :subject_name, :description)""",
+                        text("""INSERT INTO subjects (subject_code, subject_name, description)
+                               VALUES (:subject_code, :subject_name, :description)"""),
                         {
                             "subject_code": subject_code,
                             "subject_name": subject_name,
@@ -1158,7 +1158,7 @@ def bulk_delete_users(
     for user_id in user_ids:
         try:
             db.execute(
-                "DELETE FROM users WHERE user_id = :user_id",
+                text("DELETE FROM users WHERE user_id = :user_id"),
                 {"user_id": user_id}
             )
             db.commit()
