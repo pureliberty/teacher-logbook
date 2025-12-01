@@ -323,7 +323,7 @@ async def health():
     return {"status": "healthy"}
 
 
-@app.post("/token", response_model=Token)
+@app.post("/api/token", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     # Query user
     user = db.execute(
