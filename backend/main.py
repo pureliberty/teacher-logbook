@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, B
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from datetime import datetime, timedelta
 from typing import Optional, List
