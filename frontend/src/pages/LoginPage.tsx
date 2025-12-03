@@ -19,6 +19,7 @@ export default function LoginPage() {
 
     try {
       const response = await authApi.login(userId, password);
+      localStorage.setItem('access_token', response.access_token);
       const user = await authApi.getCurrentUser();
       
       login(response.access_token, user);

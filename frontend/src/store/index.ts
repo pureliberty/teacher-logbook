@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { stopActivityTracking } from '../utils/api';
 import type { User, Subject } from '../types';
 
 interface AuthState {
@@ -8,6 +9,7 @@ interface AuthState {
   login: (token: string, user: User) => void;
   logout: () => void;
   updateUser: (user: User) => void;
+  updateToken: (token: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -26,12 +28,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('access_token');
     localStorage.removeItem('user_id');
     localStorage.removeItem('role');
+    stopActivityTracking();
     set({ isAuthenticated: false, accessToken: null, user: null });
   },
   
   updateUser: (user: User) => {
     set({ user });
   },
+
+  updateToken: (token: string) => {
+    localStorage.setItem('access_token', token);
+    set({ accessToken: token });
+  }
 }));
 
 interface AppState {

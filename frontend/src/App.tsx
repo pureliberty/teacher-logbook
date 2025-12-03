@@ -1,5 +1,7 @@
+import {useEffect} from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
+import { initActivityTracking, stopActivityTracking } from './utils/api';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
@@ -11,6 +13,18 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const { isAuthenticated } = useAuthStore();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      initActivityTracking();
+    } else {
+      stopActivityTracking();
+    }
+
+    return () => stopActivityTracking();
+  }, [isAuthenticated]);
+  
   return (
     <BrowserRouter>
       <Routes>
