@@ -143,3 +143,25 @@ export interface MySubject {
   grade?: number;
   class_number?: number;
 }
+
+
+// ==================== API 응답 ====================
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+  user_id: string;
+  role: string;
+  full_name?: string;
+}
+
+// ==================== 교사 역할 배정 생성 ====================
+
+export interface TeacherAssignmentCreate {
+  teacher_user_id: string;
+  role_type: TeacherRoleType;
+  grade?: number | null;
+  class_number?: number | null;
+  subject_id?: number | null;
+  school_year: number;
+}

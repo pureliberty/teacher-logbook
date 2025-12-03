@@ -837,7 +837,41 @@ export default function AdminPage() {
 
         {activeTab === 'assignments' && <TeacherAssignmentManager />}
 
-        {activeTab === 'subject-assignments' && <SubjectAssignmentManager />}
+        // AdminPage.tsx 끝부분 수정
+
+{activeTab === 'subject-assignments' && (
+  <div className="space-y-6">
+    <div className="bg-white rounded-lg shadow-sm p-6">
+      <h2 className="text-xl font-semibold mb-4">과목별 학생 배정</h2>
+      <p className="text-gray-600 mb-4">과목을 선택하여 학급/학생을 배정하세요.</p>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {subjects.map((subject) => (
+          <button
+            key={subject.id}
+            onClick={() => setSelectedSubjectForAssignment(subject)}
+            className="p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-400 text-left transition group"
+          >
+            <div className="font-semibold text-gray-900 group-hover:text-blue-700">{subject.subject_name}</div>
+            <div className="text-sm text-gray-500 font-mono">{subject.subject_code}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+    
+    {/* 과목 선택 시 모달로 SubjectAssignmentManager 표시 */}
+    {selectedSubjectForAssignment && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <SubjectAssignmentManager
+          subjectId={selectedSubjectForAssignment.id}
+          subjectName={selectedSubjectForAssignment.subject_name}
+          schoolYear={2025}
+          onClose={() => setSelectedSubjectForAssignment(null)}
+        />
+      </div>
+    )}
+  </div>
+)}
       </main>
     </div>
   );
