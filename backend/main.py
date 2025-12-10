@@ -17,6 +17,14 @@ from assignments import router as assignments_router
 import redis
 import re
 import bcrypt
+from dependencies import (
+    get_db, get_current_user, require_admin, require_teacher_or_admin,
+    SessionLocal, engine,
+    SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
+    oauth2_scheme
+)
+from activity import router as activity_router
+from assignments import router as assignments_router
 
 # Configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -24,6 +32,7 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable not set")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30  # 0.5 hours
@@ -275,32 +284,6 @@ def _build_user_response(u):
         "number_in_class": u.number_in_class,
         "created_at": u.created_at
     }
-
-
-# Auth dependency
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> dict:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-        token_data = TokenData(user_id=user_id)
-    except JWTError:
-        raise credentials_exception
-    
-    user = db.execute(
-        text("SELECT * FROM users WHERE user_id = :user_id"),
-        {"user_id": token_data.user_id}
-    ).fetchone()
-    
-    if user is None:
-        raise credentials_exception
-    return user
 
 
 # Lock management functions
