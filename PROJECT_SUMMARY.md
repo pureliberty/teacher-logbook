@@ -1,189 +1,169 @@
-# 쌤기부 프로젝트 완성 보고서
+# PROJECT_SUMMARY.md
 
-## 📋 프로젝트 개요
+## 목차 (Table of Contents)
 
-학교생활기록부 작성 및 조회를 위한 웹 기반 협업 시스템입니다.
-
-## ✅ 주요 기능
-
-### 사용자 관리
-- 3가지 역할: 관리자, 교사, 학생
-- JWT 기반 인증
-- 사전 생성된 계정 (관리자: root2025, 교사: T0200~T0260, 학생: S20101~S21035)
-
-### 기록 관리
-- 스프레드시트 형태 UI
-- LaTeX 수식 지원 (`$x^2$`, `$$\frac{a}{b}$$`)
-- 실시간 글자수/바이트 계산 (한글 3바이트, 영문/숫자 1바이트, 줄바꿈 2바이트)
-- 모든 편집 이력 추적
-
-### 동시 편집 제어
-- First-Come-First-Served 정책
-- Redis 기반 편집 잠금
-- 자동 잠금 연장 (25분마다)
-
-### 권한 관리
-- 역할 기반 접근 제어
-- 교사의 학생 편집 권한 제어
-- 학생은 본인 기록만 조회/편집
-
-### 추가 기능
-- 댓글 시스템
-- 다양한 조회 (전체/과목별/학급별/학생별)
-- 반응형 디자인 (Web, iOS, Android, Windows)
-- 관리자 대시보드
-
-## 🛠 기술 스택
-
-### 백엔드 (FastAPI)
-- RESTful API (30+ 엔드포인트)
-- JWT 인증 및 권한 관리
-- PostgreSQL 데이터베이스
-- Redis 세션/락 관리
-
-### 프론트엔드 (React + TypeScript)
-- Tailwind CSS 반응형 UI
-- Zustand 상태 관리
-- KaTeX LaTeX 렌더링
-- React Router 라우팅
-
-### 데이터베이스 (PostgreSQL)
-- users, subjects, records, record_versions, comments 테이블
-
-### 인프라 (Docker)
-- PostgreSQL 15, Redis 7
-- FastAPI 백엔드, React + Nginx 프론트엔드
-
-## 📊 프로젝트 통계
-
-- 총 파일 수: 20+
-- 코드 라인 수: 6,000+
-- API 엔드포인트: 30+
-- React 컴포넌트: 8개
-- 데이터베이스 테이블: 6개
-- 지원 플랫폼: Web, iOS, Android, Windows
-
-## 🚀 배포 방법
-
-### 1. 기본 배포
-```bash
-docker-compose up -d
-```
-
-### 2. 프로덕션 배포
-```bash
-# 환경 변수 수정 (docker-compose.yml)
-# - SECRET_KEY 변경
-# - 데이터베이스 비밀번호 변경
-# - CORS 도메인 제한
-
-docker-compose up -d
-```
-
-### 3. 백업
-```bash
-# 데이터베이스 백업
-docker-compose exec postgres pg_dump -U logbook_user teacher_logbook > backup.sql
-
-# 볼륨 백업
-docker run --rm -v teacher-logbook_postgres_data:/data -v $(pwd):/backup alpine tar czf /backup/postgres-backup.tar.gz /data
-```
-
-## 🔐 보안 고려사항
-
-### 구현됨
-- ✅ 비밀번호 해싱 (bcrypt)
-- ✅ JWT 토큰 인증
-- ✅ 역할 기반 접근 제어
-- ✅ SQL Injection 방지 (Parameterized queries)
-- ✅ XSS 방지 (React 자동 이스케이핑)
-- ✅ CSRF 토큰 (JWT)
-
-### 프로덕션 권장사항
-- 🔸 HTTPS/SSL 인증서 적용
-- 🔸 SECRET_KEY 변경
-- 🔸 데이터베이스 비밀번호 변경
-- 🔸 CORS 도메인 제한
-- 🔸 Rate Limiting 적용
-- 🔸 정기 백업 스케줄
-
-## 📈 성능 특성
-
-- **동시 사용자**: 100+ 명
-- **응답 시간**: < 200ms (평균)
-- **편집 잠금**: 30분 자동 해제
-- **데이터베이스**: 인덱스 최적화
-- **캐싱**: Redis 활용
-
-## 🎯 사용 시나리오
-
-### 시나리오 1: 교사의 기록 작성
-1. 교사 로그인 (T0200)
-2. 과목별 조회 선택
-3. 학생 선택 → 편집 시작
-4. LaTeX 수식 포함 내용 작성
-5. 실시간으로 글자수/바이트 확인
-6. 저장 → 자동 버전 관리
-
-### 시나리오 2: 학생의 기록 확인
-1. 학생 로그인 (S20101)
-2. 자동으로 본인 기록만 표시
-3. 과목별 기록 확인
-4. 교사 댓글 확인
-5. 편집 권한이 있으면 수정
-
-### 시나리오 3: 관리자의 계정 관리
-1. 관리자 로그인 (root2025)
-2. 관리자 설정 메뉴
-3. 신규 교사/학생 추가
-4. 과목 추가/수정
-5. 사용자 목록 조회
-
-## 📝 추가 개발 가능 기능
-
-### 단기 (1-2주)
-- 엑셀 파일 파싱 및 일괄 업로드
-- 기록 인쇄 기능
-- PDF 내보내기
-- 통계 대시보드
-
-### 중기 (1개월)
-- 이메일 알림
-- 파일 첨부 기능
-- 템플릿 기능
-- 검색 기능 강화
-
-### 장기 (3개월+)
-- 학기별 데이터 아카이빙
-- 고급 통계 분석
-- 모바일 앱 개발
-- AI 기반 추천 기능
-
-## 📚 문서
-
-- `README.md`: 전체 문서
-- `QUICKSTART.md`: 빠른 시작 가이드
-- 이 파일: 프로젝트 완성 보고서
-
-## 🎉 결론
-
-모든 요구사항이 완벽하게 구현되었습니다:
-
-✅ 사용자 관리 (교사/학생/관리자)  
-✅ 기록 작성 및 조회  
-✅ LaTeX 수식 지원  
-✅ 실시간 글자수/바이트 계산  
-✅ 동시 편집 제어 (FCFS)  
-✅ 버전 관리 및 댓글  
-✅ 권한 관리  
-✅ 반응형 디자인  
-✅ Docker 이미지  
-✅ Negative space programming  
-
-시스템은 즉시 사용 가능하며, 프로덕션 환경에 배포할 준비가 되어 있습니다.
+1. [개요 (Overview)](#1-개요-overview)
+2. [시스템 아키텍처 (System Architecture)](#2-시스템-아키텍처-system-architecture)
+    - [전체 구조도 (System Flowchart)](#전체-구조도-system-flowchart)
+    - [기술 스택 (Tech Stack)](#기술-스택-tech-stack)
+3. [기능 명세 및 구성 요소 매핑 (Feature Specification & Mapping)](#3-기능-명세-및-구성-요소-매핑-feature-specification--mapping)
+    - [인증 및 사용자 관리 (Authentication & User Management)](#인증-및-사용자-관리-authentication--user-management)
+    - [생활기록부 기록 관리 (Logbook Record Management)](#생활기록부-기록-관리-logbook-record-management)
+    - [과목 및 배정 관리 (Subject & Assignment Management)](#과목-및-배정-관리-subject--assignment-management)
+4. [데이터베이스 구조 (Database Schema)](#4-데이터베이스-구조-database-schema)
+5. [관리 및 유지보수 가이드 (Maintenance Guide)](#5-관리-및-유지보수-가이드-maintenance-guide)
 
 ---
 
-**개발 완료일**: 2025-11-27  
-**버전**: 1.0.0  
-**라이선스**: Educational Use
+## 1. 개요 (Overview)
+
+**프로젝트명**: 쌩기부 (Teacher Logbook)
+**목적**: 교사가 학생들의 학교 생활 기록을 체계적으로 작성, 관리하고 학생들과 소통할 수 있는 웹 기반 플랫폼입니다. 동시성 제어(Locking)를 통해 데이터 충돌을 방지하며, 바이트 수 계산 등 생기부 작성에 특화된 기능을 제공합니다.
+
+---
+
+## 2. 시스템 아키텍처 (System Architecture)
+
+### 전체 구조도 (System Flowchart)
+
+```mermaid
+graph TD
+    subgraph Client [Frontend (Client Side)]
+        User[사용자 (Admin/Teacher/Student)]
+        ReactApp[React SPA (Vite)]
+        Router[React Router]
+        Store[Zustand Store]
+        Axios[Axios HTTP Client]
+        
+        User --> ReactApp
+        ReactApp --> Router
+        Router --> Store
+        Store --> Axios
+    end
+
+    subgraph Server [Backend (Server Side)]
+        Nginx[Nginx (Reverse Proxy)]
+        FastAPI[FastAPI Application]
+        AuthMd[Auth Middleware (JWT)]
+        
+        subgraph Logic [Business Logic]
+            UserRouter[User Router]
+            RecordRouter[Record Router]
+            AssignRouter[Assignment Router]
+            LockMgr[Lock Manager (Redis)]
+        end
+        
+        subgraph Data [Data Layer]
+            Postgres[(PostgreSQL DB)]
+            Redis[(Redis Cache)]
+        end
+
+        Axios -- HTTP/JSON --> Nginx
+        Nginx -- Proxy --> FastAPI
+        FastAPI --> AuthMd
+        
+        AuthMd --> UserRouter
+        AuthMd --> RecordRouter
+        AuthMd --> AssignRouter
+        
+        RecordRouter -- Lock/Check --> LockMgr
+        LockMgr -- Set/Get --> Redis
+        
+        UserRouter -- Query --> Postgres
+        RecordRouter -- CRUD --> Postgres
+        AssignRouter -- CRUD --> Postgres
+    end
+```
+
+### 기술 스택 (Tech Stack)
+
+| 구분 | 기술 / 도구 | 설명 |
+| :--- | :--- | :--- |
+| **Frontend** | React 18, TypeScript | UI 라이브러리 및 언어 |
+| | Vite | 빌드 도구 (빠른 개발 환경) |
+| | Tailwind CSS | 유틸리티 퍼스트 CSS 프레임워크 |
+| | Zustand | 전역 상태 관리 (가볍고 직관적) |
+| | KaTeX | 수식 렌더링 지원 |
+| **Backend** | Python 3.11+, FastAPI | 고성능 비동기 웹 프레임워크 |
+| | SQLAlchemy | ORM (데이터베이스 추상화) |
+| | Pydantic | 데이터 유효성 검사 및 설정 관리 |
+| **Infra/DB** | Docker & Compose | 컨테이너 기반 배포 관리 |
+| | PostgreSQL 15 | 주 데이터베이스 (관계형) |
+| | Redis 7 | 인메모리 저장소 (편집 잠금, 캐싱) |
+| | Nginx | 웹 서버 및 리버스 프록시 |
+
+---
+
+## 3. 기능 명세 및 구성 요소 매핑 (Feature Specification & Mapping)
+
+### 인증 및 사용자 관리 (Authentication & User Management)
+
+*   **설명**: JWT(JSON Web Token) 기반의 인증 시스템을 사용하여 보안을 유지합니다. 역할(Role) 기반 접근 제어(RBAC)가 적용되어 있습니다.
+*   **주요 구성 요소**:
+    *   **BE**: `main.py` (`/api/token`, `/api/users/me`), `dependencies.py` (OAuth2 scheme)
+    *   **FE**: 로그인 페이지, AuthGuard 컴포넌트 (토큰 저장 및 유효성 검사)
+
+| 기능 | 상세 내용 | Backend Mapping | Frontend Mapping | 비고 |
+| :--- | :--- | :--- | :--- | :--- |
+| **로그인** | ID/PW 인증 후 Access Token 발급 | `POST /api/token` | `LoginPage` | Token은 LocalStorage/Memory에 저장 |
+| **내 정보** | 현재 로그인한 사용자 정보 조회 및 수정 | `GET/PUT /api/users/me` | `UserProfile` | 비밀번호 변경 등 |
+| **사용자 관리** | (관리자) 사용자 추가, 일괄 등록 | `POST /api/admin/users/*` | `AdminPage` | 엑셀 업로드 지원 |
+
+### 생활기록부 기록 관리 (Logbook Record Management)
+
+*   **설명**: 이 시스템의 핵심 기능으로, 학생별 과목별 기록을 작성합니다. 동시 편집 충돌을 막기 위해 **Redis 기반의 Locking** 메커니즘을 사용합니다.
+*   **주요 구성 요소**:
+    *   **BE**: `main.py` (Record Routes), Redis Client
+    *   **FE**: Editor Component, RecordList, ByteCounter
+
+| 기능 | 상세 내용 | Backend Mapping | Frontend Mapping | 비고 |
+| :--- | :--- | :--- | :--- | :--- |
+| **기록 조회** | 학생/과목/반 별 기록 리스트 조회 | `GET /api/records` | `Dashboard`, `RecordList` | 권한에 따라 조회 범위 제한 |
+| **편집 잠금 (Lock)** | 편집 시작 시 독점적 권한 획득 (30분) | `POST .../{id}/lock` | `Editor` (Edit Start) | Redis 사용, 다른 사용자 편집 불가 |
+| **기록 저장** | 내용 저장 및 바이트/글자 수 자동 계산 | `PUT .../{id}` | `Editor` (Save) | 한글3byte, 줄바꿈2byte 계산 로직 적용 |
+| **버전 관리** | 수정 이력 자동 저장 | `GET .../{id}/versions` | `HistoryModal` | 누가 언제 무엇을 수정했는지 추적 |
+| **학생 권한** | 교사가 특정 기록을 학생이 수정 가능하게 설정 | `PUT .../permissions` | `RecordItem` (Switch) | 학생 자기주도적 기록 관리 지원 |
+
+### 과목 및 배정 관리 (Subject & Assignment Management)
+
+*   **설명**: 어떤 학생이 어떤 과목을 듣는지, 어떤 반이 어떤 과목에 배정되었는지를 관리합니다.
+*   **주요 구성 요소**:
+    *   **BE**: `assignments.py` (Assignment Logic), `main.py` (Subject CRUD)
+    *   **FE**: SubjectManager, ClassAssignment
+
+| 기능 | 상세 내용 | Backend Mapping | Frontend Mapping | 비고 |
+| :--- | :--- | :--- | :--- | :--- |
+| **과목 등록** | (관리자) 새로운 과목 생성 | `POST /api/subjects` | `SubjectManage` | |
+| **학급 배정** | 특정 반(예: 1학년 1반)을 과목에 일괄 배정 | `POST .../classes-to-subject` | `AssignmentPage` | 해당 반 학생들 자동 매핑 |
+| **개별 배정** | 특정 학생을 과목에 추가 배정 | `POST .../students-to-subject` | `StudentSelector` | 이동수업/선택과목 대응 |
+
+---
+
+## 4. 데이터베이스 구조 (Database Schema)
+
+*   **Users**: 사용자 계정 정보 (id, role, name, grade, class 등)
+*   **Subjects**: 과목 메타데이터 (name, code, description)
+*   **Records**: 실제 생기부 기록 내용 (content, byte_count)
+    *   *Foreign Keys*: `student_user_id` (Users), `subject_id` (Subjects)
+*   **RecordVersions**: 수정 이력 (audit log)
+*   **SubjectAssignments**: 과목-학생 매핑 테이블 (수강 신청 내역과 유사)
+
+---
+
+## 5. 관리 및 유지보수 가이드 (Maintenance Guide)
+
+### 주의사항 (Caution)
+1.  **Secret Key**: `docker-compose.yml`의 `SECRET_KEY`는 프로덕션 배포 시 반드시 변경하십시오.
+2.  **데이터 백업**: `docker-compose exec postgres pg_dump ...` 명령을 통해 정기적으로 DB를 백업해야 합니다.
+3.  **Redis 지속성**: Redis는 잠금 정보뿐만 아니라 세션성 데이터도 다룰 수 있으므로, 재시작 시 잠금 상태가 초기화될 수 있음을 인지해야 합니다.
+
+### 유용한 명령어 (Useful Commands)
+
+*   **전체 시스템 시작**: `docker-compose up -d --build`
+*   **로그 확인 (실시간)**: `docker-compose logs -f`
+*   **백엔드 쉘 접속**: `docker-compose exec backend /bin/bash`
+*   **DB 접속**: `docker-compose exec postgres psql -U logbook_user -d teacher_logbook`
+
+### 문제 해결 (Troubleshooting)
+*   **423 Locked Error**: 사용자가 비정상 종료하여 락이 남아있는 경우, 관리자 권한으로 락을 해제하거나 Redis 키 만료(기본 30분)를 기다려야 합니다.
+*   **DB 연결 실패**: `postgres` 컨테이너가 완전히 뜰 때까지 백엔드가 기다리는지(`depends_on` 설정) 확인하십시오.

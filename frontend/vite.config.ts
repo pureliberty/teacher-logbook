@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 3000,
+    port: 40000,
+    host: true, // Docker 환경에서 외부 접속 허용을 위해 필요
     proxy: {
       '/api': {
         target: 'http://backend:8000',
