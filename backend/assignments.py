@@ -52,20 +52,7 @@ class PaginatedStudentsResponse(BaseModel):
     total_pages: int
 
 
-def get_db():
-    """DB 세션 - main.py에서 import하여 사용"""
-    from main import SessionLocal
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def get_current_user(token: str = Depends()):
-    """현재 사용자 - main.py에서 import하여 사용"""
-    from main import get_current_user as main_get_current_user
-    return main_get_current_user(token)
+from dependencies import get_db, get_current_user
 
 
 # ==================== API 엔드포인트 ====================

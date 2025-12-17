@@ -137,7 +137,7 @@ function ExcelImportSection({ type, onImportComplete }: ExcelImportSectionProps)
     try {
       const formData = new FormData();
       formData.append('file', file);
-      
+
       let url = `/api/admin/import-excel/${type}`;
       if (type === 'teacher-assignments') {
         url = `/api/admin/import-teacher-assignments?school_year=${schoolYear}`;
@@ -231,7 +231,7 @@ function TeacherAssignmentManager() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [schoolYear, setSchoolYear] = useState(2025);
-  
+
   // 새 배정 폼
   const [newTeacherId, setNewTeacherId] = useState('');
   const [newRoleType, setNewRoleType] = useState<TeacherRoleType>('subject_teacher');
@@ -276,11 +276,11 @@ function TeacherAssignmentManager() {
         subject_id: newSubjectId || null,
         school_year: schoolYear,
       });
-      
-      setNewTeacherId('');
+
       setNewGrade('');
       setNewClass('');
       setNewSubjectId('');
+      // 교사 ID와 역할은 유지하여 연속 배정 편의성 제공
       loadData();
     } catch (error: any) {
       alert(error.response?.data?.detail || '배정 실패');
@@ -289,7 +289,7 @@ function TeacherAssignmentManager() {
 
   const handleDelete = async (id: number) => {
     if (!confirm('이 역할 배정을 삭제하시겠습니까?')) return;
-    
+
     try {
       await adminApi.deleteTeacherAssignment(id);
       loadData();
@@ -418,13 +418,12 @@ function TeacherAssignmentManager() {
                     {a.teacher_name || a.teacher_user_id}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                      a.role_type === 'homeroom_teacher' ? 'bg-purple-100 text-purple-800' :
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${a.role_type === 'homeroom_teacher' ? 'bg-purple-100 text-purple-800' :
                       a.role_type === 'assistant_homeroom' ? 'bg-pink-100 text-pink-800' :
-                      a.role_type === 'subject_teacher' ? 'bg-blue-100 text-blue-800' :
-                      a.role_type === 'grade_head' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-green-100 text-green-800'
-                    }`}>
+                        a.role_type === 'subject_teacher' ? 'bg-blue-100 text-blue-800' :
+                          a.role_type === 'grade_head' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-green-100 text-green-800'
+                      }`}>
                       {ROLE_TYPE_LABELS[a.role_type]}
                     </span>
                   </td>
@@ -459,28 +458,28 @@ function TeacherAssignmentManager() {
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  
+
   const [users, setUsers] = useState<User[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'users' | 'subjects' | 'assignments' | 'subject-assignments'>('users');
-  
+
   // 선택된 항목들
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [selectedSubjects, setSelectedSubjects] = useState<Set<number>>(new Set());
-  const [selectedSubjectForAssignments, setSelectedSubjectForAssignment] = useState<Subject | null>(null);
+  const [selectedSubjectForAssignment, setSelectedSubjectForAssignment] = useState<Subject | null>(null);
 
   // New user form
   const [newUserId, setNewUserId] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<'teacher' | 'student'>('student');
-  
+
   // New subject form
   const [newSubjectName, setNewSubjectName] = useState('');
   const [newSubjectCode, setNewSubjectCode] = useState('');
   const [newSubjectDesc, setNewSubjectDesc] = useState('');
-  
+
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -524,7 +523,7 @@ export default function AdminPage() {
         full_name: newFullName || undefined,
         role: newRole,
       });
-      
+
       setSuccess('사용자가 생성되었습니다.');
       setNewUserId('');
       setNewPassword('');
@@ -537,7 +536,7 @@ export default function AdminPage() {
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm(`${userId} 사용자를 삭제하시겠습니까?`)) return;
-    
+
     try {
       await adminApi.deleteUser(userId);
       setSuccess('사용자가 삭제되었습니다.');
@@ -553,7 +552,7 @@ export default function AdminPage() {
       return;
     }
     if (!confirm(`선택한 ${selectedUsers.size}명의 사용자를 삭제하시겠습니까?`)) return;
-    
+
     try {
       await adminApi.bulkDeleteUsers(Array.from(selectedUsers));
       setSuccess(`${selectedUsers.size}명의 사용자가 삭제되었습니다.`);
@@ -575,7 +574,7 @@ export default function AdminPage() {
         subject_code: newSubjectCode,
         description: newSubjectDesc || undefined,
       });
-      
+
       setSuccess('과목이 생성되었습니다.');
       setNewSubjectName('');
       setNewSubjectCode('');
@@ -588,7 +587,7 @@ export default function AdminPage() {
 
   const handleDeleteSubject = async (subjectId: number) => {
     if (!confirm('이 과목을 삭제하시겠습니까?')) return;
-    
+
     try {
       await subjectApi.delete(subjectId);
       setSuccess('과목이 삭제되었습니다.');
@@ -604,7 +603,7 @@ export default function AdminPage() {
       return;
     }
     if (!confirm(`선택한 ${selectedSubjects.size}개의 과목을 삭제하시겠습니까?`)) return;
-    
+
     try {
       const result = await subjectApi.bulkDelete(Array.from(selectedSubjects));
       if (result.errors.length > 0) {
@@ -699,7 +698,7 @@ export default function AdminPage() {
         {activeTab === 'users' && (
           <div className="space-y-6">
             <ExcelImportSection type="users" onImportComplete={loadData} />
-            
+
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-4">사용자 추가</h2>
               <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -749,11 +748,10 @@ export default function AdminPage() {
                         <td className="px-4 py-3 font-mono">{u.user_id}</td>
                         <td className="px-4 py-3">{u.full_name || '-'}</td>
                         <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                            u.role === 'admin' ? 'bg-red-100 text-red-800' :
+                          <span className={`px-2 py-1 rounded text-xs font-semibold ${u.role === 'admin' ? 'bg-red-100 text-red-800' :
                             u.role === 'teacher' ? 'bg-blue-100 text-blue-800' :
-                            'bg-green-100 text-green-800'
-                          }`}>
+                              'bg-green-100 text-green-800'
+                            }`}>
                             {u.role === 'admin' ? '관리자' : u.role === 'teacher' ? '교사' : '학생'}
                           </span>
                         </td>
@@ -771,7 +769,7 @@ export default function AdminPage() {
                 </table>
               </div>
             </div>
-            
+
             {showResetModal && selectedUser && (
               <ResetPasswordModal user={selectedUser} onClose={() => { setShowResetModal(false); setSelectedUser(null); }} onReset={loadData} />
             )}
@@ -781,7 +779,7 @@ export default function AdminPage() {
         {activeTab === 'subjects' && (
           <div className="space-y-6">
             <ExcelImportSection type="subjects" onImportComplete={loadData} />
-            
+
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h2 className="text-xl font-semibold mb-4">과목 추가</h2>
               <form onSubmit={handleCreateSubject} className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -837,41 +835,41 @@ export default function AdminPage() {
 
         {activeTab === 'assignments' && <TeacherAssignmentManager />}
 
-        // AdminPage.tsx 끝부분 수정
 
-{activeTab === 'subject-assignments' && (
-  <div className="space-y-6">
-    <div className="bg-white rounded-lg shadow-sm p-6">
-      <h2 className="text-xl font-semibold mb-4">과목별 학생 배정</h2>
-      <p className="text-gray-600 mb-4">과목을 선택하여 학급/학생을 배정하세요.</p>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {subjects.map((subject) => (
-          <button
-            key={subject.id}
-            onClick={() => setSelectedSubjectForAssignment(subject)}
-            className="p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-400 text-left transition group"
-          >
-            <div className="font-semibold text-gray-900 group-hover:text-blue-700">{subject.subject_name}</div>
-            <div className="text-sm text-gray-500 font-mono">{subject.subject_code}</div>
-          </button>
-        ))}
-      </div>
-    </div>
-    
-    {/* 과목 선택 시 모달로 SubjectAssignmentManager 표시 */}
-    {selectedSubjectForAssignment && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <SubjectAssignmentManager
-          subjectId={selectedSubjectForAssignment.id}
-          subjectName={selectedSubjectForAssignment.subject_name}
-          schoolYear={2025}
-          onClose={() => setSelectedSubjectForAssignment(null)}
-        />
-      </div>
-    )}
-  </div>
-)}
+
+        {activeTab === 'subject-assignments' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm p-6">
+              <h2 className="text-xl font-semibold mb-4">과목별 학생 배정</h2>
+              <p className="text-gray-600 mb-4">과목을 선택하여 학급/학생을 배정하세요.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {subjects.map((subject) => (
+                  <button
+                    key={subject.id}
+                    onClick={() => setSelectedSubjectForAssignment(subject)}
+                    className="p-4 border rounded-lg hover:bg-blue-50 hover:border-blue-400 text-left transition group"
+                  >
+                    <div className="font-semibold text-gray-900 group-hover:text-blue-700">{subject.subject_name}</div>
+                    <div className="text-sm text-gray-500 font-mono">{subject.subject_code}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 과목 선택 시 모달로 SubjectAssignmentManager 표시 */}
+            {selectedSubjectForAssignment && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <SubjectAssignmentManager
+                  subjectId={selectedSubjectForAssignment.id}
+                  subjectName={selectedSubjectForAssignment.subject_name}
+                  schoolYear={2025}
+                  onClose={() => setSelectedSubjectForAssignment(null)}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
