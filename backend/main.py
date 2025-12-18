@@ -1912,6 +1912,67 @@ async def create_teacher_assignment(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.put("/api/admin/teacher-assignments/{assignment_id}")
+async def update_teacher_assignment(
+    assignment_id: int,
+    assignment: TeacherAssignmentCreate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """교사 역할 배정 수정 (admin only)"""
+    if current_user.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # 역할별 필수 필드 검증
+    if assignment.role_type in ['homeroom_teacher', 'assistant_homeroom']:
+        if not assignment.grade or not assignment.class_number:
+            raise HTTPException(status_code=400, detail="담임/부담임은 학년과 반이 필수입니다.")
+    
+    if assignment.role_type == 'subject_teacher':
+        if not assignment.grade or not assignment.subject_id:
+            raise HTTPException(status_code=400, detail="교과교사는 학년과 과목이 필수입니다.")
+
+    try:
+        # 기존 배정 확인
+        existing = db.execute(
+            text("SELECT * FROM teacher_assignments WHERE id = :id"),
+            {"id": assignment_id}
+        ).fetchone()
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail="배정을 찾을 수 없습니다.")
+
+        result = db.execute(
+            text("""
+                UPDATE teacher_assignments 
+                SET teacher_user_id = :teacher_user_id,
+                    role_type = :role_type,
+                    grade = :grade,
+                    class_number = :class_number,
+                    subject_id = :subject_id,
+                    school_year = :school_year,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+                RETURNING *
+            """),
+            {
+                "id": assignment_id,
+                "teacher_user_id": assignment.teacher_user_id,
+                "role_type": assignment.role_type,
+                "grade": assignment.grade,
+                "class_number": assignment.class_number,
+                "subject_id": assignment.subject_id,
+                "school_year": assignment.school_year
+            }
+        )
+        db.commit()
+        return dict(result.fetchone()._mapping)
+    except Exception as e:
+        db.rollback()
+        if "unique" in str(e).lower():
+            raise HTTPException(status_code=400, detail="이미 동일한 역할이 배정되어 있습니다.")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.delete("/api/admin/teacher-assignments/{assignment_id}")
 async def delete_teacher_assignment(
     assignment_id: int,

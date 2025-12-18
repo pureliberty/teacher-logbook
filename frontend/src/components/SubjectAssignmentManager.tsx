@@ -19,11 +19,11 @@ type TabMode = 'assigned' | 'class' | 'student';
 
 const SCHOOL_CONFIG = { grades: [1, 2, 3] as const, classesPerGrade: 15 };
 
-export default function SubjectAssignmentManager({ 
-  subjectId, 
-  subjectName, 
+export default function SubjectAssignmentManager({
+  subjectId,
+  subjectName,
   schoolYear = 2025,
-  onClose 
+  onClose
 }: Props) {
   const [activeTab, setActiveTab] = useState<TabMode>('assigned');
   const [assignedClasses, setAssignedClasses] = useState<SubjectClassAssignment[]>([]);
@@ -76,8 +76,11 @@ export default function SubjectAssignmentManager({
       const data = await response.json();
       setAssignedStudents(data.data || []);
       setTotalCount(data.total_count || 0);
-    } catch (err) {
-      setError('학생 목록을 불러올 수 없습니다.');
+    } catch (err: any) {
+      console.error('학생 로드 실패:', err);
+      // 서버에서 보낸 에러 메시지가 있다면 표시
+      const msg = err.response?.data?.detail || err.message || '학생 목록을 불러올 수 없습니다.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -106,7 +109,7 @@ export default function SubjectAssignmentManager({
       const token = localStorage.getItem('access_token');
       const currentKeys = new Set(selectedClasses);
       const previousKeys = new Set(assignedClasses.map(c => `${c.grade}-${c.class_number}`));
-      
+
       // 해제할 학급
       for (const prevKey of previousKeys) {
         if (!currentKeys.has(prevKey)) {
@@ -123,7 +126,7 @@ export default function SubjectAssignmentManager({
       const newClasses = Array.from(currentKeys)
         .filter(key => !previousKeys.has(key))
         .map(key => { const [grade, classNumber] = key.split('-').map(Number); return { grade, class_number: classNumber }; });
-      
+
       if (newClasses.length > 0) {
         await fetch('/api/assignments/classes-to-subject', {
           method: 'POST',

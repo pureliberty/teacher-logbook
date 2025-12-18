@@ -225,19 +225,32 @@ function ExcelImportSection({ type, onImportComplete }: ExcelImportSectionProps)
 }
 
 // 교사 역할 배정 관리 컴포넌트
+// 교사 역할 배정 관리 컴포넌트
 function TeacherAssignmentManager() {
-  const [assignments, setAssignments] = useState<TeacherAssignment[]>([]);
+  const [assignments, setAssignments] = useState<TeacherAssignmentWithDetails[]>([]);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
-  const [schoolYear, setSchoolYear] = useState(2025);
 
-  // 새 배정 폼
+  // Creation State (Multi-select)
+  const [schoolYear, setSchoolYear] = useState(new Date().getFullYear());
   const [newTeacherId, setNewTeacherId] = useState('');
-  const [newRoleType, setNewRoleType] = useState<TeacherRoleType>('subject_teacher');
-  const [newGrade, setNewGrade] = useState<number | ''>('');
-  const [newClass, setNewClass] = useState<number | ''>('');
+  const [selectedRoles, setSelectedRoles] = useState<Set<TeacherRoleType>>(new Set());
+  const [selectedClasses, setSelectedClasses] = useState<Set<string>>(new Set()); // Format: "grade-class"
   const [newSubjectId, setNewSubjectId] = useState<number | ''>('');
+
+  // Bulk Action State
+  const [selectedAssignments, setSelectedAssignments] = useState<Set<number>>(new Set());
+
+  // Edit State
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<{
+    teacher_user_id: string;
+    role_type: TeacherRoleType;
+    grade: number;
+    class_number: number;
+    subject_id: number | null;
+  } | null>(null);
 
   useEffect(() => {
     loadData();
@@ -246,207 +259,351 @@ function TeacherAssignmentManager() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [assignmentsData, usersData, subjectsData] = await Promise.all([
+      const [assignRows, userRows, subjRows] = await Promise.all([
         adminApi.getTeacherAssignments(schoolYear),
         adminApi.getAllUsers(),
         subjectApi.getAll(),
       ]);
-      setAssignments(assignmentsData);
-      setTeachers(usersData.filter(u => u.role === 'teacher'));
-      setSubjects(subjectsData);
+      setAssignments(assignRows);
+      setTeachers(userRows.filter(u => u.role === 'teacher' || u.role === 'admin'));
+      setSubjects(subjRows);
     } catch (error) {
-      console.error('Failed to load data:', error);
+      console.error('Data load failed:', error);
+      // alert('데이터 로드 실패');
     } finally {
       setLoading(false);
     }
   };
 
+  const toggleRole = (role: TeacherRoleType) => {
+    const newSet = new Set(selectedRoles);
+    if (newSet.has(role)) newSet.delete(role);
+    else newSet.add(role);
+    setSelectedRoles(newSet);
+  };
+
+  const toggleClass = (grade: number, classNum: number) => {
+    const key = `${grade}-${classNum}`;
+    const newSet = new Set(selectedClasses);
+    if (newSet.has(key)) newSet.delete(key);
+    else newSet.add(key);
+    setSelectedClasses(newSet);
+  };
+
   const handleCreate = async () => {
-    if (!newTeacherId || !newRoleType) {
-      alert('교사와 역할을 선택해주세요.');
+    if (!newTeacherId) {
+      alert('교사를 선택해주세요.');
+      return;
+    }
+    if (selectedRoles.size === 0) {
+      alert('최소 하나의 역할을 선택해주세요.');
+      return;
+    }
+
+    // Validation
+    if (selectedRoles.has('subject_teacher') && !newSubjectId) {
+      alert('교과교사 역할이 포함되어 있어 과목 선택이 필수입니다.');
+      return;
+    }
+    if ((selectedRoles.has('homeroom_teacher') || selectedRoles.has('assistant_homeroom')) && selectedClasses.size === 0) {
+      alert('담임/부담임 역할이 포함되어 있어 학급 선택이 필수입니다.');
       return;
     }
 
     try {
-      await adminApi.createTeacherAssignment({
-        teacher_user_id: newTeacherId,
-        role_type: newRoleType,
-        grade: newGrade || null,
-        class_number: newClass || null,
-        subject_id: newSubjectId || null,
-        school_year: schoolYear,
-      });
+      const promises: Promise<any>[] = [];
 
-      setNewGrade('');
-      setNewClass('');
-      setNewSubjectId('');
-      // 교사 ID와 역할은 유지하여 연속 배정 편의성 제공
+      for (const role of selectedRoles) {
+        if (['homeroom_teacher', 'assistant_homeroom', 'grade_head'].includes(role)) {
+          if (selectedClasses.size > 0) {
+            for (const classKey of selectedClasses) {
+              const [g, c] = classKey.split('-').map(Number);
+              promises.push(adminApi.createTeacherAssignment({
+                teacher_user_id: newTeacherId,
+                role_type: role,
+                grade: g,
+                class_number: c,
+                subject_id: null,
+                school_year: schoolYear
+              }));
+            }
+          } else if (role === 'grade_head') {
+            // Grade head without class selected? Maybe assume grade 0? 
+            // For now just skip as our UI emphasizes class selection.
+          }
+        }
+        else if (role === 'subject_teacher') {
+          if (selectedClasses.size > 0) {
+            for (const classKey of selectedClasses) {
+              const [g, c] = classKey.split('-').map(Number);
+              promises.push(adminApi.createTeacherAssignment({
+                teacher_user_id: newTeacherId,
+                role_type: role,
+                grade: g,
+                class_number: c,
+                subject_id: newSubjectId || null,
+                school_year: schoolYear
+              }));
+            }
+          } else {
+            // Subject teacher with no class (fallback if needed)
+            promises.push(adminApi.createTeacherAssignment({
+              teacher_user_id: newTeacherId,
+              role_type: role,
+              grade: 0,
+              class_number: 0,
+              subject_id: newSubjectId || null,
+              school_year: schoolYear
+            }));
+          }
+        } else {
+          promises.push(adminApi.createTeacherAssignment({
+            teacher_user_id: newTeacherId,
+            role_type: role,
+            grade: 0,
+            class_number: 0,
+            subject_id: null,
+            school_year: schoolYear
+          }));
+        }
+      }
+
+      await Promise.all(promises);
+
+      alert('배정이 완료되었습니다.');
+      // Reset limited state
+      setSelectedClasses(new Set());
+      setSelectedRoles(new Set());
       loadData();
     } catch (error: any) {
-      alert(error.response?.data?.detail || '배정 실패');
+      console.error(error);
+      alert('일부 배정 실패: ' + (error.response?.data?.detail || error.message));
+      loadData();
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('이 역할 배정을 삭제하시겠습니까?')) return;
+  const handleBulkDelete = async () => {
+    if (selectedAssignments.size === 0) return;
+    if (!confirm(`선택한 ${selectedAssignments.size}개의 배정을 삭제하시겠습니까?`)) return;
 
     try {
-      await adminApi.deleteTeacherAssignment(id);
+      await Promise.all(Array.from(selectedAssignments).map(id => adminApi.deleteTeacherAssignment(id)));
+      setSelectedAssignments(new Set());
       loadData();
-    } catch (error) {
-      alert('삭제 실패');
+    } catch (e) {
+      alert('삭제 중 오류 발생');
     }
   };
 
-  if (loading) {
-    return <div className="text-center py-8">로딩 중...</div>;
-  }
+  const startEdit = (assignment: TeacherAssignmentWithDetails) => {
+    setEditingId(assignment.id);
+    setEditForm({
+      teacher_user_id: assignment.teacher_user_id,
+      role_type: assignment.role_type,
+      grade: assignment.grade,
+      class_number: assignment.class_number,
+      subject_id: assignment.subject_id
+    });
+  };
+
+  const handleUpdate = async (id: number) => {
+    if (!editForm) return;
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`/api/admin/teacher-assignments/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ...editForm,
+          school_year: schoolYear
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || 'Update failed');
+      }
+
+      setEditingId(null);
+      setEditForm(null);
+      loadData();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  const toggleAssignmentSelection = (id: number) => {
+    const newSet = new Set(selectedAssignments);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedAssignments(newSet);
+  };
+
+  if (loading) return <div>로딩 중...</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <ExcelImportSection type="teacher-assignments" onImportComplete={loadData} />
 
-      {/* 새 배정 추가 */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h3 className="text-lg font-semibold mb-4">역할 배정 추가</h3>
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">학년도</label>
-            <input
-              type="number"
-              value={schoolYear}
-              onChange={(e) => setSchoolYear(Number(e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            />
+      {/* Creation Form */}
+      <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">새 역할 배정</h3>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">학년도</label>
+              <input type="number" value={schoolYear} onChange={e => setSchoolYear(Number(e.target.value))} className="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">교사 선택</label>
+              <select value={newTeacherId} onChange={e => setNewTeacherId(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
+                <option value="">선택하세요</option>
+                {teachers.map(t => <option key={t.user_id} value={t.user_id}>{t.full_name || t.user_id}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">과목 (교과교사용)</label>
+              <select value={newSubjectId} onChange={e => setNewSubjectId(Number(e.target.value) || '')} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm">
+                <option value="">과목 없음</option>
+                {subjects.map(s => <option key={s.id} value={s.id}>{s.subject_name}</option>)}
+              </select>
+            </div>
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">교사</label>
-            <select
-              value={newTeacherId}
-              onChange={(e) => setNewTeacherId(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="">선택</option>
-              {teachers.map(t => (
-                <option key={t.user_id} value={t.user_id}>
-                  {t.full_name || t.user_id}
-                </option>
+            <label className="block text-sm font-medium text-gray-700 mb-2">역할 선택 (다중 선택 가능)</label>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(ROLE_TYPE_LABELS).map(([role, label]) => (
+                <label key={role} className={`flex items-center space-x-2 px-3 py-2 rounded border cursor-pointer ${selectedRoles.has(role as TeacherRoleType) ? 'bg-blue-50 border-blue-500' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>
+                  <input type="checkbox" checked={selectedRoles.has(role as TeacherRoleType)} onChange={() => toggleRole(role as TeacherRoleType)} className="rounded text-blue-600 focus:ring-blue-500" />
+                  <span className="text-sm font-medium">{label}</span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">역할</label>
-            <select
-              value={newRoleType}
-              onChange={(e) => setNewRoleType(e.target.value as TeacherRoleType)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              {Object.entries(ROLE_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+            <label className="block text-sm font-medium text-gray-700 mb-2">학급 선택 (다중 선택 가능)</label>
+            <div className="grid grid-cols-1 gap-2 border p-3 rounded-md bg-gray-50">
+              {[1, 2, 3].map(grade => (
+                <div key={grade} className="flex items-center gap-2 overflow-x-auto pb-1">
+                  <span className="w-12 font-bold text-gray-600 flex-shrink-0">{grade}학년</span>
+                  {Array.from({ length: 15 }, (_, i) => i + 1).map(cls => {
+                    const key = `${grade}-${cls}`;
+                    const isSelected = selectedClasses.has(key);
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => toggleClass(grade, cls)}
+                        className={`w-8 h-8 rounded-full text-xs font-medium flex-shrink-0 transition-colors border
+                                            ${isSelected ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-200'}`}
+                      >
+                        {cls}
+                      </button>
+                    );
+                  })}
+                </div>
               ))}
-            </select>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">학년</label>
-            <select
-              value={newGrade}
-              onChange={(e) => setNewGrade(e.target.value ? Number(e.target.value) : '')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="">선택</option>
-              <option value="1">1학년</option>
-              <option value="2">2학년</option>
-              <option value="3">3학년</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">반</label>
-            <select
-              value={newClass}
-              onChange={(e) => setNewClass(e.target.value ? Number(e.target.value) : '')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="">전체/미지정</option>
-              {Array.from({ length: 15 }, (_, i) => i + 1).map(n => (
-                <option key={n} value={n}>{n}반</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">과목</label>
-            <select
-              value={newSubjectId}
-              onChange={(e) => setNewSubjectId(e.target.value ? Number(e.target.value) : '')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="">미지정</option>
-              {subjects.map(s => (
-                <option key={s.id} value={s.id}>{s.subject_name}</option>
-              ))}
-            </select>
-          </div>
+
+          <button onClick={handleCreate} className="w-full py-2 bg-blue-600 text-white rounded-md font-bold hover:bg-blue-700 shadow-sm">
+            선택한 역할 배정하기
+          </button>
         </div>
-        <button
-          onClick={handleCreate}
-          className="mt-4 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
-        >
-          배정 추가
-        </button>
       </div>
 
-      {/* 배정 목록 */}
-      <div className="bg-white rounded-lg shadow-sm">
-        <div className="p-6">
-          <h3 className="text-lg font-semibold">역할 배정 목록 ({assignments.length})</h3>
+      {/* List */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+          <h3 className="font-bold text-gray-700">배정 목록 ({assignments.length})</h3>
+          {selectedAssignments.size > 0 && (
+            <button onClick={handleBulkDelete} className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700">
+              선택 삭제 ({selectedAssignments.size})
+            </button>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="overflow-x-auto max-h-[800px] overflow-y-auto">
+          <table className="min-w-full divide-y divide-gray-200 relative">
+            <thead className="bg-gray-100 sticky top-0 z-10 shadow-sm">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">교사</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">역할</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">학년</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">반</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">과목</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">작업</th>
+                <th className="px-4 py-3 w-8"><input type="checkbox" checked={selectedAssignments.size === assignments.length && assignments.length > 0} onChange={() => {
+                  if (selectedAssignments.size === assignments.length) setSelectedAssignments(new Set());
+                  else setSelectedAssignments(new Set(assignments.map(a => a.id)));
+                }} /></th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">교사</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">역할</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">학년</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">반</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">과목</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase">관리</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {assignments.map((a) => (
-                <tr key={a.id}>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {a.teacher_name || a.teacher_user_id}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${a.role_type === 'homeroom_teacher' ? 'bg-purple-100 text-purple-800' :
-                      a.role_type === 'assistant_homeroom' ? 'bg-pink-100 text-pink-800' :
-                        a.role_type === 'subject_teacher' ? 'bg-blue-100 text-blue-800' :
-                          a.role_type === 'grade_head' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-green-100 text-green-800'
-                      }`}>
-                      {ROLE_TYPE_LABELS[a.role_type]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">{a.grade ? `${a.grade}학년` : '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{a.class_number ? `${a.class_number}반` : '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{a.subject_name || '-'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    <button
-                      onClick={() => handleDelete(a.id)}
-                      className="text-red-600 hover:text-red-800"
-                    >
-                      🗑️
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {assignments.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                    배정된 역할이 없습니다.
-                  </td>
-                </tr>
-              )}
+            <tbody className="divide-y divide-gray-200 bg-white">
+              {assignments.map(a => {
+                const isEditing = editingId === a.id;
+                return (
+                  <tr key={a.id} className={selectedAssignments.has(a.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+                    <td className="px-4 py-3">
+                      <input type="checkbox" checked={selectedAssignments.has(a.id)} onChange={() => toggleAssignmentSelection(a.id)} />
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {isEditing ? (
+                        <select className="border rounded px-1 py-1 text-sm bg-white" value={editForm?.teacher_user_id} onChange={e => setEditForm({ ...editForm!, teacher_user_id: e.target.value })}>
+                          {teachers.map(t => <option key={t.user_id} value={t.user_id}>{t.full_name}</option>)}
+                        </select>
+                      ) : (
+                        a.teacher_name || a.teacher_user_id
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {isEditing ? (
+                        <select className="border rounded px-1 py-1 text-sm bg-white" value={editForm?.role_type} onChange={e => setEditForm({ ...editForm!, role_type: e.target.value as TeacherRoleType })}>
+                          {Object.entries(ROLE_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      ) : (
+                        <span className={`px-2 py-1 rounded text-xs font-semibold ${a.role_type === 'homeroom_teacher' ? 'bg-purple-100 text-purple-800' :
+                          a.role_type === 'assistant_homeroom' ? 'bg-pink-100 text-pink-800' :
+                            a.role_type === 'subject_teacher' ? 'bg-blue-100 text-blue-800' :
+                              a.role_type === 'grade_head' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-green-100 text-green-800'
+                          }`}>
+                          {ROLE_TYPE_LABELS[a.role_type]}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {isEditing ? <input type="number" className="w-16 border rounded px-1" value={editForm?.grade} onChange={e => setEditForm({ ...editForm!, grade: Number(e.target.value) })} /> : (a.grade ? a.grade + '학년' : '-')}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {isEditing ? <input type="number" className="w-16 border rounded px-1" value={editForm?.class_number} onChange={e => setEditForm({ ...editForm!, class_number: Number(e.target.value) })} /> : (a.class_number ? a.class_number + '반' : '-')}
+                    </td>
+                    <td className="px-4 py-3 text-sm">
+                      {isEditing ? (
+                        <select className="border rounded px-1 py-1 text-sm bg-white" value={editForm?.subject_id || ''} onChange={e => setEditForm({ ...editForm!, subject_id: Number(e.target.value) || null })}>
+                          <option value="">없음</option>
+                          {subjects.map(s => <option key={s.id} value={s.id}>{s.subject_name}</option>)}
+                        </select>
+                      ) : (a.subject_name || '-')}
+                    </td>
+                    <td className="px-4 py-3 text-sm space-x-2">
+                      {isEditing ? (
+                        <>
+                          <button onClick={() => handleUpdate(a.id)} className="text-blue-600 font-bold hover:underline">저장</button>
+                          <button onClick={() => { setEditingId(null); setEditForm(null); }} className="text-gray-500 hover:underline">취소</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => startEdit(a)} className="px-2 py-1 bg-white border border-gray-300 rounded text-xs hover:bg-gray-50">수정</button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -810,6 +967,7 @@ export default function AdminPage() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">과목 코드</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">설명</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">작업</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">배정 관리</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -823,6 +981,14 @@ export default function AdminPage() {
                         <td className="px-4 py-3">{subject.description || '-'}</td>
                         <td className="px-4 py-3">
                           <button onClick={() => handleDeleteSubject(subject.id)} className="text-red-600 hover:text-red-800" title="삭제">🗑️</button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => setSelectedSubjectForAssignment(subject)}
+                            className="px-3 py-1 bg-blue-100 text-blue-700 rounded-md text-sm hover:bg-blue-200"
+                          >
+                            학생/학급 배정
+                          </button>
                         </td>
                       </tr>
                     ))}
